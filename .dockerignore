@@ -1,0 +1,16 @@
+# Keep the podman build context lean and keep per-instance secrets out of the image.
+.git
+.github
+.vscode
+**/.vscode
+**/*.swp
+
+# Per-instance extra configs (secrets/CORS/LDAP settings) must never be baked in.
+extras/*/config.php
+
+# Keep runtime data dirs out of the image (the dev bind mount or the app populates them).
+extras/*/data/*
+!extras/*/data/.gitkeep
+
+# TLS material is bind-mounted at runtime (./certs) and holds private keys — never bake in.
+certs/
