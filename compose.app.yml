@@ -1,0 +1,106 @@
+# SimpleRisk application stack. Decoupled from compose.support.yml: the two
+# share NO container network. The app reaches the support services (db/ldap/smtp)
+# at host.containers.internal via Podman's host-gateway, because they publish
+# their ports on 0.0.0.0 (see compose.support.yml). extra_hosts wires up that
+# hostname inside rootless Podman.
+#
+# The app auto-provisions its database (DB_SETUP=automatic): on first boot the
+# entrypoint creates the `simplerisk` DB + app user + core schema using
+# DB_SETUP_PASS, which MUST equal MARIADB_ROOT_PASSWORD in .env.support (the
+# support stack's db root password). It is idempotent, so DB_SETUP can stay set
+# across reboots/rebuilds.
+#
+# Usage:
+#   podman compose -f compose.support.yml up -d     # bring support up FIRST
+#   podman compose -f compose.app.yml up -d --build
+#   podman logs simplerisk-app                      # look for "Setup has been applied successfully!"
+#   https://localhost:8443/                          # accept the self-signed cert warning
+
+name: simplerisk-app
+
+services:
+  simplerisk:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: simplerisk-local:dev
+    container_name: simplerisk-app
+    # Rootless Podman maps container UIDs to host sub-UIDs, so the non-root simplerisk
+    # app user couldn't otherwise write host-owned bind mounts. keep-id maps the
+    # container's simplerisk user (uid 1000) to the host user (eli, 1000), so ./extras
+    # and ./certs stay host-owned and are directly readable/writable — no :U chown needed.
+    # (podman-compose reads this as `userns_mode`, which it turns into `--userns`.)
+    userns_mode: keep-id
+    env_file:
+      - .env
+    environment:
+      # The app reaches the support DB over the host-gateway, not a service name.
+      SIMPLERISK_DB_HOSTNAME: host.containers.internal
+      SIMPLERISK_DB_PORT: "3306"
+      SIMPLERISK_DB_USERNAME: simplerisk
+      SIMPLERISK_DB_PASSWORD: ${SIMPLERISK_DB_PASSWORD}
+      SIMPLERISK_DB_DATABASE: simplerisk
+      # Bootstrap root credential used once to create the DB/user/schema.
+      # MUST equal MARIADB_ROOT_PASSWORD in .env.support (the support stack's
+      # db root password). Sourced from .env (DB_SETUP_PASS).
+      DB_SETUP: automatic
+      DB_SETUP_PASS: ${DB_SETUP_PASS}
+      DB_SETUP_WAIT: ${DB_SETUP_WAIT:-30}
+      # Secrets also exposed via env_file (.env), repeated here for clarity.
+      SIMPLERISK_ENCRYPTION_KEY: ${SIMPLERISK_ENCRYPTION_KEY}
+      LDAP_BIND_PASSWORD: ${LDAP_BIND_PASSWORD}
+      # Optional mail settings (applied to the settings table on each boot).
+      MAIL_TRANSPORT: ${MAIL_TRANSPORT:-}
+      MAIL_HOST: ${MAIL_HOST:-}
+      MAIL_PORT: ${MAIL_PORT:-}
+      MAIL_FROM_EMAIL: ${MAIL_FROM_EMAIL:-}
+      MAIL_USERNAME: ${MAIL_USERNAME:-}
+      MAIL_PASSWORD: ${MAIL_PASSWORD:-}
+      # Optional first DB-local admin (skipped if unset; LDAP is the default login).
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+      ADMIN_NAME: ${ADMIN_NAME:-}
+    # Resolve host.containers.internal to the host-gateway inside rootless Podman
+    # so the app can reach the support stack's host-published ports.
+    extra_hosts:
+      - "host.containers.internal:host-gateway"
+    # HTTPS only. Rootless Podman can't bind privileged host 80/443, so the app's
+    # internal :80→:443 rewrite can't be exposed 1:1 — an http port would redirect
+    # to a dead host :443. Access the app at https://localhost:8443/ (self-signed).
+    ports:
+      - "8443:443"
+    # Host bind mounts — keep runtime state out of the (rebuilt) image so it lives on host:
+    #   ./extras → extras code is live-editable here; per-extra config.php + data/ persist.
+    #   ./certs  → TLS material persists; entrypoint.sh generates it on first boot.
+    # :Z applies a private SELinux label (FC43 enforcing). Create ./certs before first up.
+    volumes:
+      - ./extras:/var/www/simplerisk/extras:Z
+      - ./certs:/etc/apache2/ssl:Z
+    restart: unless-stopped
+    # HTTP liveness on internal :80 (OCI image format does not support HEALTHCHECK).
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost"]
+      interval: 1m
+    # Joins the external simplerisk-app_default network (declared below). This
+    # network is shared with containers/services that attach to it from outside
+    # this compose project (e.g. to reach the app on its internal port via the
+    # `simplerisk` DNS alias, which is a cert SAN). Declaring it external keeps
+    # podman-compose from recycling it on --force-recreate — which it otherwise
+    # does (it removes any project-labeled network during recreate), failing with
+    # "network is being used" while those external containers stay attached.
+    networks:
+      - simplerisk
+
+# A network shared with containers/services outside this compose project. It is
+# external on every side that uses it: no compose project owns its lifecycle, so
+# a --force-recreate of any one of them can't try to remove a network the others
+# are still attached to. (podman-compose 1.5.0 removes project-labeled networks
+# on recreate/down even when marked external, so this network is kept label-free;
+# it must therefore be created manually — see below.)
+# One-time setup on a fresh host (the network must exist before `up`):
+#   podman network create simplerisk-app_default
+networks:
+  simplerisk:
+    external: true
+    name: simplerisk-app_default

@@ -1,0 +1,61 @@
+# Demo directory seed for the SimpleRisk Custom Authentication (LDAP) extra.
+#
+# Loaded automatically by osixia/openldap on FIRST start (empty database) via the
+# bootstrap LDIF mount in docker-compose.yml. osixia itself creates the base
+# entry dc=simplerisk,dc=local from LDAP_DOMAIN, so this file only adds the OUs,
+# a group, and demo users beneath it.
+#
+# *** DEV-ONLY THROWAWAY CREDENTIALS — never deploy these. ***
+# For non-throwaway seeds, hash passwords with:  slappasswd -h '{SSHA}'
+# and put the resulting {SSHA}... string in userPassword.
+#
+# Re-seeding after edits requires wiping the directory volume:
+#   podman compose down -v            # wipes ALL volumes incl. the DB
+#   # or, to wipe just LDAP:
+#   podman volume rm $(pwd | xargs basename -s .nothing)_simplerisk-ldap ...
+#   podman compose up -d --build
+
+# --- Organizational units ---
+dn: ou=users,dc=simplerisk,dc=local
+objectClass: organizationalUnit
+ou: users
+
+dn: ou=groups,dc=simplerisk,dc=local
+objectClass: organizationalUnit
+ou: groups
+
+# --- A group (roles-only mode ignores it; kept so the directory is realistic) ---
+dn: cn=users,ou=groups,dc=simplerisk,dc=local
+objectClass: groupOfNames
+cn: users
+member: uid=jdoe,ou=users,dc=simplerisk,dc=local
+member: uid=asmith,ou=users,dc=simplerisk,dc=local
+member: uid=admin1,ou=users,dc=simplerisk,dc=local
+
+# --- Demo users (uid = SimpleRisk username at login) ---
+dn: uid=jdoe,ou=users,dc=simplerisk,dc=local
+objectClass: inetOrgPerson
+uid: jdoe
+cn: Jane Doe
+sn: Doe
+givenName: Jane
+mail: jdoe@simplerisk.local
+userPassword: jdoePass123!
+
+dn: uid=asmith,ou=users,dc=simplerisk,dc=local
+objectClass: inetOrgPerson
+uid: asmith
+cn: Alice Smith
+sn: Smith
+givenName: Alice
+mail: asmith@simplerisk.local
+userPassword: asmithPass123!
+
+dn: uid=admin1,ou=users,dc=simplerisk,dc=local
+objectClass: inetOrgPerson
+uid: admin1
+cn: LDAP Admin
+sn: Admin
+givenName: LDAP
+mail: admin1@simplerisk.local
+userPassword: admin1Pass123!

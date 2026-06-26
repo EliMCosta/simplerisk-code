@@ -1,0 +1,102 @@
+# Support services stack for SimpleRisk: database + (demo) LDAP + optional SMTP.
+#
+# This stack is intentionally decoupled from the app stack (compose.app.yml):
+# the two share NO container network. Services publish their ports on the host
+# (0.0.0.0) so the app container can reach them at host.containers.internal via
+# Podman's host-gateway. This is required under rootless Podman, where a
+# container cannot reach a host port bound to 127.0.0.1.
+#
+# Usage:
+#   podman compose -f compose.support.yml up -d
+#   podman compose -f compose.support.yml --profile mail up -d   # also start SMTP
+#   podman compose -f compose.support.yml down -v                # stop + wipe data
+
+name: simplerisk-support
+
+services:
+  # MariaDB. Created EMPTY (root only); the app container's entrypoint creates
+  # the `simplerisk` database + app user + core schema itself via DB_SETUP=automatic
+  # (using DB_SETUP_PASS, which must equal MARIADB_ROOT_PASSWORD).
+  db:
+    image: docker.io/library/mariadb:11.4
+    container_name: simplerisk-db
+    # Support secrets (MARIADB_ROOT_PASSWORD) come from the gitignored
+    # .env.support (copy .env.support.example). Root-only: the app provisions
+    # the `simplerisk` DB + user as root.
+    env_file:
+      - .env.support
+    environment:
+      # Allow root login over TCP from the app container.
+      MARIADB_ROOT_HOST: "%"
+    # SimpleRisk requires a relaxed sql_mode (no STRICT_TRANS_TABLES / NO_ZERO_DATE /
+    # ONLY_FULL_GROUP_BY). Performance tuning (see performance-tuning.md): larger
+    # InnoDB buffer pool + log file, O_DIRECT, slow-query log.
+    command: >-
+      --sql-mode=ERROR_FOR_DIVISION_BY_ZERO,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION
+      --innodb-buffer-pool-size=512M
+      --innodb-log-file-size=256M
+      --innodb-flush-method=O_DIRECT
+      --slow-query-log=ON
+      --long-query-time=1
+    volumes:
+      - simplerisk-db:/var/lib/mysql
+    # Published on 0.0.0.0 so the app container (separate stack) can reach it via
+    # the host-gateway. Tighten with a host firewall if you don't want 3306 exposed.
+    ports:
+      - "3306:3306"
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  # Demo LDAP/Active Directory server for the Custom Authentication extra
+  # (extras/authentication). SimpleRisk reaches it at host.containers.internal:1389
+  # (seeded by seed-ldap-settings.php). Plaintext is fine for the dev directory.
+  #
+  # Host port 1389 (not 389): rootless Podman cannot bind privileged ports (<1024),
+  # so the LDAP service listens on its default 389 inside the container and is
+  # published on the high host port 1389.
+  #
+  # Pinned to 1.4.0: the 1.5.0 tag has a fatal startup bug (the "Disable
+  # replication config" step fails). --copy-service is required because osixia
+  # sed-edits the bind-mounted bootstrap LDIF in place.
+  ldap:
+    image: docker.io/osixia/openldap:1.4.0
+    container_name: simplerisk-ldap
+    command: --copy-service
+    # LDAP_ADMIN_PASSWORD comes from the gitignored .env.support (env_file).
+    env_file:
+      - .env.support
+    environment:
+      LDAP_ORGANISATION: "SimpleRisk Dev"
+      LDAP_DOMAIN: "simplerisk.local"
+      LDAP_TLS: "false"              # plaintext (dev directory)
+    volumes:
+      - simplerisk-ldap:/var/lib/ldap
+      - simplerisk-ldap-config:/etc/ldap/slapd.d
+      # ':z' for SELinux relabeling.
+      - ./ldap-seed.ldif:/container/service/slapd/assets/config/bootstrap/ldif/50-seed.ldif:z
+    ports:
+      - "1389:389"
+    restart: unless-stopped
+
+  # Optional outbound SMTP relay (the app reaches it at host.containers.internal:1025
+  # when MAIL_* is set). Off by default; start with `--profile mail`. Host port
+  # 1025 (not 25): rootless Podman cannot bind privileged port 25.
+  smtp:
+    image: docker.io/namshi/smtp
+    container_name: simplerisk-smtp
+    # Relay creds (RELAY_*) come from .env.support; blank = local open relay.
+    env_file:
+      - .env.support
+    ports:
+      - "1025:25"
+    profiles: ["mail"]
+    restart: unless-stopped
+
+volumes:
+  simplerisk-db:
+  simplerisk-ldap:
+  simplerisk-ldap-config:
