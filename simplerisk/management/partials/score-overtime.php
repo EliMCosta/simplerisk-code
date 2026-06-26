@@ -17,9 +17,7 @@ enforce_permission("riskmanagement");
     </h2>
     <div id="score-overtime-container-accordion-body" class="accordion-collapse collapse">
         <div class="score-overtime-container accordion-body">
-            <div class="well">
-                <?php score_over_time(); ?>
-            </div>
+            <div class="well score-over-time-lazy" data-lazy-section="score-over-time"></div>
         </div>
     </div>
 </div>

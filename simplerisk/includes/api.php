@@ -47,6 +47,11 @@ function is_authenticated()
     // If we are not authenticated with a key but have an authenticated session
     else if (is_session_authenticated())
     {
+        // JSON-RPC (MCP) auth seeds a session cookie but marks it MCP-only so
+        // non-admin keys cannot fall through to REST without X-API-KEY.
+        if (function_exists('api_session_blocks_rest_auth') && api_session_blocks_rest_auth()) {
+            return false;
+        }
 	    // Return true
 	    return true;
     }
@@ -959,6 +964,13 @@ function dynamicriskForm()
                 }
             }
             $data_row = [];
+            $custom_values_by_field = [];
+            if (customization_extra()) {
+                require_once(realpath(__DIR__ . '/../extras/customization/index.php'));
+                foreach (getCustomFieldValuesByRiskId($row['id']) as $custom_value) {
+                    $custom_values_by_field[$custom_value['field_id']] = $custom_value;
+                }
+            }
             foreach ($table_columns as $column) {
                 if(stripos($column, "custom_field_") === false){
                     switch ($column) {
@@ -1014,18 +1026,11 @@ function dynamicriskForm()
                             break;
                     }
                 } else if(customization_extra()) {
-                    // Include the extra
-                    require_once(realpath(__DIR__ . '/../extras/customization/index.php'));
                     $field_id = str_replace("custom_field_", "", $column);
-                    $custom_values = getCustomFieldValuesByRiskId($row['id']);
                     $custom_data_row = "";
-                    foreach($custom_values as $custom_value)
-                    {
-                        // Check if this custom value is for the active field
-                        if($custom_value['field_id'] == $field_id){
-                            $custom_data_row = get_custom_field_name_by_value($field_id, $custom_value['field_type'], $custom_value['encryption'], $custom_value['value']);
-                            break;
-                        }
+                    if (isset($custom_values_by_field[$field_id])) {
+                        $custom_value = $custom_values_by_field[$field_id];
+                        $custom_data_row = get_custom_field_name_by_value($field_id, $custom_value['field_type'], $custom_value['encryption'], $custom_value['value']);
                     }
                     $data_row[] = $custom_data_row;
                     $row["custom_field_".$field_id] = strip_tags($custom_data_row);
@@ -2881,7 +2886,7 @@ function getRiskComments($id = null)
         $text = try_decrypt($row['comment']);
         if ($text !== null) {
             $comments[] = [
-                'date' => $row['date'],
+                'date' => date(get_default_datetime_format("g:i A T"), strtotime($row['date'])),
                 'user' => $row['name'],
                 'comment' => $text,
             ];
@@ -2889,6 +2894,77 @@ function getRiskComments($id = null)
     }
 
     json_response(200, 'Comments retrieved successfully.', $comments);
+}
+
+/*****************************************
+ * FUNCTION: GET RISK AUDIT TRAIL (API)  *
+ *****************************************/
+function getRiskAuditTrail($id = null)
+{
+    global $escaper, $lang;
+
+    if (!check_permission("riskmanagement")) {
+        json_response(403, $escaper->escapeHtml($lang['NoPermissionForRiskManagement']), NULL);
+        return;
+    }
+
+    $id = $id ?? $_GET['id'] ?? null;
+    if (!$id) {
+        json_response(400, $escaper->escapeHtml($lang['YouNeedToSpecifyAnIdParameter']), NULL);
+        return;
+    }
+
+    if (!check_access_for_risk($id)) {
+        json_response(403, $escaper->escapeHtml($lang['NoPermissionForRiskManagement']), NULL);
+        return;
+    }
+
+    $days = !empty($_GET['days']) && ctype_digit((string)$_GET['days']) ? (int)$_GET['days'] : 36500;
+    if ($days < 0) {
+        $days = 36500;
+    }
+
+    $log_type = get_param('get', 'log_type', null);
+    if ($log_type) {
+        $log_type = array_values(array_filter(array_map('trim', str_getcsv($log_type))));
+    } else {
+        $log_type = ['risk', 'jira'];
+    }
+
+    json_response(200, null, array_map(function ($log) {
+        return [
+            'timestamp' => date(get_default_datetime_format("g:i A T"), strtotime($log['timestamp'])),
+            'message' => $log['message'],
+        ];
+    }, get_audit_trail($id, $days, $log_type)));
+}
+
+/*****************************************
+ * FUNCTION: GET SCORE OVER TIME HTML    *
+ *****************************************/
+function scoreOverTimeForm()
+{
+    global $escaper, $lang;
+
+    if (!check_permission("riskmanagement")) {
+        json_response(403, $escaper->escapeHtml($lang['NoPermissionForRiskManagement']), NULL);
+        return;
+    }
+
+    $id = get_param('get', 'id', null);
+    if (!$id) {
+        json_response(400, $escaper->escapeHtml($lang['YouNeedToSpecifyAnIdParameter']), NULL);
+        return;
+    }
+
+    if (!check_access_for_risk($id)) {
+        json_response(403, $escaper->escapeHtml($lang['NoPermissionForRiskManagement']), NULL);
+        return;
+    }
+
+    ob_start();
+    score_over_time();
+    json_response(200, null, ob_get_clean());
 }
 
 /*****************************************
@@ -3980,143 +4056,39 @@ function getFrameworkControlsDatatable() {
         'customization_extra',
         __DIR__ . '/../extras/customization/index.php',
         'get_active_fields',
-        ["control", "", 2],
+        ["control", "", 1],
         []
     );
 
     // If the user has governance permissions
     if (check_permission("governance")) {
         $draw = $escaper->escapeHtml($_POST['draw']);
-        $control_class = isset($_POST['control_class']) ? $_POST['control_class'] : [];
-        $control_phase = isset($_POST['control_phase']) ? $_POST['control_phase'] : [];
-        $control_family = isset($_POST['control_family']) ? $_POST['control_family'] : [];
-        $control_owner = isset($_POST['control_owner']) ? $_POST['control_owner'] : [];
-        $control_framework = isset($_POST['control_framework']) ? $_POST['control_framework'] : [];
-        $control_priority = isset($_POST['control_priority']) ? $_POST['control_priority'] : [];
-        $control_type = isset($_POST['control_type']) ? $_POST['control_type'] : [];
-        $control_status = isset($_POST['control_status']) ? $_POST['control_status'] : [];
-        $control_text = $_POST['control_text'];
+        $start = isset($_POST['start']) ? (int)$_POST['start'] : 0;
+        $length = isset($_POST['length']) ? (int)$_POST['length'] : 10;
 
-        $controls = get_framework_controls_by_filter($control_class, $control_phase, $control_owner, $control_family, $control_framework, $control_priority, $control_type, $control_status, $control_text);
-        
-        $recordsTotal = get_framework_controls_count();
-        $recordsFiltered = count($controls);
+        $result = get_framework_controls_datatable_data([
+            'control_class' => isset($_POST['control_class']) ? $_POST['control_class'] : [],
+            'control_phase' => isset($_POST['control_phase']) ? $_POST['control_phase'] : [],
+            'control_family' => isset($_POST['control_family']) ? $_POST['control_family'] : [],
+            'control_owner' => isset($_POST['control_owner']) ? $_POST['control_owner'] : [],
+            'control_framework' => isset($_POST['control_framework']) ? $_POST['control_framework'] : [],
+            'control_priority' => isset($_POST['control_priority']) ? $_POST['control_priority'] : [],
+            'control_type' => isset($_POST['control_type']) ? $_POST['control_type'] : [],
+            'control_status' => isset($_POST['control_status']) ? $_POST['control_status'] : [],
+            'control_text' => $_POST['control_text'] ?? '',
+        ], $start, $length, $active_fields);
 
-        $data = array();
-
-        foreach ($controls as $key=>$control) {
-            // If it is not requested to view all.
-            if($_POST['length'] != -1) {
-                if($key < $_POST['start']) {
-                    continue;
-                }
-                if($key >= ($_POST['start'] + $_POST['length'])) {
-                    break;
-                }
-            }
-            $edit = "<a href='#' class='btn btn-success ms-1 control-block--edit' title='{$escaper->escapeHtml($lang['Edit'])}' data-id='{$escaper->escapeHtml($control['id'])}'><i class='fa fa-edit'></i></a>";
-            // Remove clone button if user has no permission for add new controls
-            if(empty($_SESSION['add_new_controls'])) {
-                $clone = "";
-            } else { // Add clone button if user has the permission
-                $clone = "<a href='#' class='btn btn-submit ms-1 control-block--clone' title='{$escaper->escapeHtml($lang['Clone'])}' data-id='{$escaper->escapeHtml($control['id'])}'><i class='fa fa-clone'></i></a>";
-            }
-            $delete = "<a href='' class='btn btn-primary control-block--delete' title='{$escaper->escapeHtml($lang['Delete'])}' data-id='{$escaper->escapeHtml($control['id'])}'><i class='fa fa-trash'></i></a>";
-            $html = "
-                <div class='control-block item-block clearfix'>
-                    <div class='control-block--header clearfix' data-project='' style='padding: 1.25rem;'>
-                        <div class='row mb-2'>
-                            <div class='col-sm-12 col-md-8 checkbox-in-div'>
-                                <input type='checkbox' name='control_ids[]' value='{$escaper->escapeHtml($control['id'])}' class='form-check-input'>
-                                <span>This control is marked for deletion</span>
-                            </div> 
-                            <div class='col-sm-12 col-md-4 text-end control-block--row'>
-                                {$delete}{$clone}{$edit}
-                            </div>
-                        </div>
-                        <div class='control-block--row control-content pb-0'>
-            ";
-            if (customization_extra()) {
-                $html .= "
-                            <div class='row'>
-                                <div class='col-12 top-panel'>" . 
-                                    display_detail_control_fields_view('top', $active_fields, $control) . "
-                                </div>
-                            </div>
-                            <div class='row'>
-                                <div class='col-6 left-panel'>" . 
-                                    display_detail_control_fields_view('left', $active_fields, $control) . "
-                                </div>
-                                <div class='col-6 right-panel'>" . 
-                                    display_detail_control_fields_view('right', $active_fields, $control) . "
-                                </div>
-                            </div>
-                            <div class='row'>
-                                <div class='col-12 bottom-panel'>" . 
-                                    display_detail_control_fields_view('bottom', $active_fields, $control) . "
-                                </div>
-                            </div>
-                ";
-            } else {
-                $html .= "
-                            <div class='row'>
-                                <div class='col-12 top-panel'>" . 
-                                    display_control_id_view($control['id'], 'top') .
-                                    display_control_name_view($control['short_name'], 'top') . 
-                                    display_control_longname_view($control['long_name'], 'top') . 
-                                    display_control_number_view2($control['control_number'], 'top') . "
-                                </div>
-                            </div>
-                            <div class='row'>
-                                <div class='col-6 left-panel'>" . 
-                                    display_control_owner_view($control['control_owner_name'], 'left') . 
-                                    display_control_priority_view($control['control_priority_name'], 'left') . 
-                                    display_current_maturity_view($control['control_maturity_name'], 'left') . 
-                                    display_desired_maturity_view($control['desired_maturity_name'], 'left') . 
-                                    display_control_class_view($control['control_class_name'], 'left') . "
-                                </div>
-                                <div class='col-6 right-panel'>" . 
-                                    display_control_phase_view($control['control_phase_name'], 'right') . 
-                                    display_control_family_view($control['family_short_name'], 'right') . 
-                                    display_control_mitigation_percent_view($control['mitigation_percent'], 'right') . 
-                                    display_control_type_view($control['control_type_ids'], 'right') . 
-                                    display_control_status_view($control['control_status'], 'right') . "
-                                </div>
-                            </div>
-                            <div class='row'>
-                                <div class='col-12 bottom-panel'>" . 
-                                    display_control_description_view($control['description'], 'bottom') . 
-                                    display_supplemental_guidance_view($control['supplemental_guidance'], 'bottom') . 
-                                    display_mapping_framework_view($control['id'], 'bottom') . 
-                                    display_mapping_asset_view($control['id'], 'bottom') . "
-                                </div>
-                            </div>
-                ";
-            }
-            $html .= "
-                        </div>
-                    </div>
-                </div>
-            ";
-            $data[] = [$html];
-        }
-        $classList  = getAvailableControlClassList($control_framework);
-        $phaseList  = getAvailableControlPhaseList($control_framework);
-        $familyList  = getAvailableControlFamilyList($control_framework);
-        $ownerList  = getAvailableControlOwnerList($control_framework);
-        $priorityList  = getAvailableControlPriorityList($control_framework);
-        $result = array(
+        echo json_encode([
             'draw' => $draw,
-            'data' => $data,
-            'recordsTotal' => $recordsTotal,
-            'recordsFiltered' => $recordsFiltered,
-            'classList' => $classList ,
-            'phaseList' => $phaseList ,
-            'familyList' => $familyList ,
-            'ownerList' => $ownerList ,
-            'priorityList' => $priorityList ,
-        );
-        echo json_encode($result);
+            'data' => $result['data'],
+            'recordsTotal' => $result['recordsTotal'],
+            'recordsFiltered' => $result['recordsFiltered'],
+            'classList' => $result['classList'],
+            'phaseList' => $result['phaseList'],
+            'familyList' => $result['familyList'],
+            'ownerList' => $result['ownerList'],
+            'priorityList' => $result['priorityList'],
+        ]);
         exit;
     } else {
         json_response(400, $escaper->escapeHtml($lang['NoPermissionForGovernance']), NULL);
@@ -4141,6 +4113,21 @@ function getMitigationControlsDatatable(){
         $controls = get_framework_controls($control_ids);
     
         $recordsTotal = count($controls);
+
+        $page_control_ids = [];
+        foreach ($controls as $key => $control) {
+            if ($_POST['length'] != -1) {
+                if ($key < $_POST['start'] || $key >= ($_POST['start'] + $_POST['length'])) {
+                    continue;
+                }
+            }
+            $page_control_ids[] = (int)$control['id'];
+        }
+
+        $validations_by_control = get_mitigation_to_controls_batch($mitigation_id, $page_control_ids);
+        $files_by_control = get_validation_files_batch($mitigation_id, $page_control_ids);
+        $mapping_counts_by_control = get_control_framework_mappings_counts_batch($page_control_ids);
+        $control_type_names_cache = [];
     
         $data = array();
     
@@ -4197,7 +4184,7 @@ function getMitigationControlsDatatable(){
                             </table>
             ";
 
-            $html .= display_mapping_framework_view($control['id']);
+            $html .= display_mapping_framework_view($control['id'], "", $mapping_counts_by_control[(int)$control['id']] ?? ['frameworks' => 0, 'controls' => 0]);
 
             /*
             $mapped_frameworks = get_mapping_control_frameworks($control['id']);
@@ -4229,9 +4216,12 @@ function getMitigationControlsDatatable(){
             ";
             */
 
-            $validation = get_mitigation_to_controls($mitigation_id,$control['id']);
-            $control_status_names = get_names_by_multi_values("control_type", $control['control_type_ids']);
-            $files = get_validation_files($mitigation_id, $control['id']);
+            $validation = $validations_by_control[(int)$control['id']] ?? [];
+            if (!isset($control_type_names_cache[$control['control_type_ids']])) {
+                $control_type_names_cache[$control['control_type_ids']] = get_names_by_multi_values("control_type", $control['control_type_ids']);
+            }
+            $control_status_names = $control_type_names_cache[$control['control_type_ids']];
+            $files = $files_by_control[(int)$control['id']] ?? [];
 
             $html .= "
                         <div>
@@ -5139,181 +5129,21 @@ function getDefineTestsResponse()
         $control_framework = empty($_POST['control_framework']) ? [] : $_POST['control_framework'];
         $control_family = isset($_POST['control_family']) ? $_POST['control_family'] : [];
         $control_name = isset($_POST['control_name']) ? $_POST['control_name'] : "";
+        $start = isset($_POST['start']) ? (int)$_POST['start'] : 0;
+        $length = isset($_POST['length']) ? (int)$_POST['length'] : 10;
 
-        $controls = get_framework_controls_by_filter("all", "all", "all", $control_family, $control_framework, "all", "all", "all", $control_name);
+        $result = get_define_tests_datatable_data([
+            'control_framework' => $control_framework,
+            'control_family' => $control_family,
+            'control_name' => $control_name,
+        ], $start, $length);
 
-         // If team separation is enabled
-        if (team_separation_extra()) {
-            //Include the team separation extra
-            require_once(realpath(__DIR__ . '/../extras/separation/index.php'));
-
-            // It means that either the user is an admin
-            // or everyone has access to the tests/audits.
-            // It means we can treat Team Separation like it is disabled        
-            $separation_enabled = !should_skip_test_and_audit_permission_check();
-        } else {
-            $separation_enabled = false;
-        }
-
-        // Remove those controls from the results that have no frameworks mapped
-        $controls = array_filter($controls, fn($c) => !empty($c['framework_ids'])); 
-
-        // Reindex the array after filtering
-        $controls = array_values($controls);
-
-        $recordsTotal = count($controls);
-
-        $data = array();
-        foreach ($controls as $key=>$control)
-        {
-            // If it is not requested to view all
-            if($_POST['length'] != -1){
-                if($key < $_POST['start']){
-                    continue;
-                }
-                if($key >= ($_POST['start'] + $_POST['length'])){
-                    break;
-                }
-            }
-
-            $tests = get_framework_control_tests_by_control_id($control['id']);
-
-            $html = "
-                <div class='card border border-primary mb-0'>
-                    <div class='card-header d-flex justify-content-between align-items-center'>
-                        <div>
-                            <strong>{$escaper->escapeHtml($control['control_number'])}</strong>
-                            <div class='text-muted small'>{$escaper->escapeHtml($control['short_name'])}</div>
-                        </div>
-            ";
-
-            // Only display the "Add Test" button if the user has permissions to
-            if(isset($_SESSION["define_tests"]) && $_SESSION["define_tests"] == 1)
-            {
-                $html .= "
-                        <button data-control-id='{$control['id']}' class='btn btn-sm btn-dark add-test'>{$escaper->escapeHtml($lang['AddTest'])}</button>
-                ";
-            }
-
-            $html .= "
-                    </div>
-                    <div class='card-body'>
-                        <div class='row mb-2 top'>
-                            <div class='col-2 text-right'><label>{$escaper->escapeHtml($lang['ControlLongName'])} :</label></div>
-                            <div class='col-10'>{$escaper->escapeHtml($control['long_name'])}</div>
-                        </div>
-                        <div class='row mb-2 top'>
-                            <div class='col-2 text-right'><label>{$escaper->escapeHtml($lang['ControlOwner'])} :</label></div>
-                            <div class='col-10'>{$escaper->escapeHtml($control['control_owner_name'])}</div>
-                        </div>
-                        <div class='row mb-2 top'>
-                            <div class='col-2 text-right'><label>{$escaper->escapeHtml($lang['Description'])} :</label></div>
-                            <div class='col-10'>{$escaper->purifyHtml($control['description'])}</div>
-                        </div>" . 
-                        
-                        display_mapping_framework_view($control['id'], 'bottom') . "
-                        
-                        <div class='framework-control-test-list'>
-                            <table width='100%' class='table table-bordered table-striped table-condensed sortable mb-0'>
-                                <thead class='table-active'>
-                                    <tr>
-                                        <th style='width: 100px; min-width: 100px'>{$escaper->escapeHtml($lang['ID'])}</th>
-                                        <th style='width: 150px; min-width: 150px'>{$escaper->escapeHtml($lang['TestName'])}</th>
-                                        <th style='width: 100px; min-width: 100px'>{$escaper->escapeHtml($lang['Tester'])}</th>
-                                        <th style='width: 100px; min-width: 100px'>{$escaper->escapeHtml($lang['AdditionalStakeholders'])}</th>
-                                        <th style='width: 150px; min-width: 150px'>{$escaper->escapeHtml($lang['Tags'])}</th>
-                                        <th style='width: 110px; min-width: 110px'>{$escaper->escapeHtml($lang['TestFrequency'])}</th>
-                                        <th style='width: 110px; min-width: 110px'>{$escaper->escapeHtml($lang['LastTestDate'])}</th>
-                                        <th style='width: 110px; min-width: 110px'>{$escaper->escapeHtml($lang['NextTestDate'])}</th>
-                                        <th style='width: 110px; min-width: 110px'>{$escaper->escapeHtml($lang['AutoInitiateAudit'])}</th>
-                                        <th style='width: 110px; min-width: 110px'>{$escaper->escapeHtml($lang['AuditInitiationOffset'])}</th>
-                                        <th style='width: 130px; min-width: 130px'>{$escaper->escapeHtml($lang['ApproximateTime'])}</th>
-                                        <th class='text-center' style='width: 50px; min-width: 50px'>{$escaper->escapeHtml($lang['Actions'])}</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-            ";
-
-            foreach ($tests as $test) {
-                if ($separation_enabled) {
-                    if (!is_user_allowed_to_access($_SESSION['uid'], $test['id'], 'test')) {
-                        continue;
-                    }
-                }
-                $tags_view = "";
-                if ($test['tags']) {
-                    foreach(str_getcsv($test['tags']) as $tag) {
-                        $tags_view .= "
-                            <button class='btn btn-secondary btn-sm' style='pointer-events: none;margin-right:2px;padding: 4px 12px;' role='button' aria-disabled='true'>{$escaper->escapeHtml($tag)}</button>
-                        ";
-                    }
-                } else {
-                    $tags_view .= "";
-                }
-
-                $last_date = format_date($test['last_date']);
-                $next_date = format_date($test['next_date']);
-
-                // There's no separate fields for marking auto audit initiation enabled and another for the offset.
-                // Simply setting `audit_initiation_offset` to null means it's disabled
-                $auto_audit_initiation = isset($test['audit_initiation_offset']) ? $escaper->escapeHtml($lang['Yes']) : $escaper->escapeHtml($lang['No']);
-                $audit_initiation_offset = isset($test['audit_initiation_offset']) ? $escaper->escapeHtml($test['audit_initiation_offset']) . " " . ($test['audit_initiation_offset'] > 1 ? $escaper->escapeHtml($lang['days']) : $escaper->escapeHtml($lang['day'])) : "--";
-
-                if (isset($_SESSION["edit_tests"]) && $_SESSION["edit_tests"] == 1) {
-                    $edit_row = "
-                        <a class='edit-test mx-1' data-id='{$escaper->escapeHtml($test['id'])}' role='button'><i class='fa fa-edit'></i></a>
-                    ";
-                } else {
-                    $edit_row = "";
-                }
-
-                if (isset($_SESSION["delete_tests"]) && $_SESSION["delete_tests"] == 1) {
-                    $delete_row = "
-                        <a class='delete-row mx-1' data-toggle='modal' data-id='{$escaper->escapeHtml($test['id'])}' role='button'><i class='fa fa-trash'></i></a>
-                    ";
-                } else {
-                    $delete_row = "";
-                }
-
-
-                $html .= "
-                                    <tr>
-                                        <td>{$escaper->escapeHtml($test['id'])}</td>
-                                        <td>{$escaper->escapeHtml($test['name'])}</td>
-                                        <td>{$escaper->escapeHtml($test['tester_name'])}</td>
-                                        <td>{$escaper->escapeHtml(get_stakeholder_names($test['additional_stakeholders'], 3))}</td>
-                                        <td>{$tags_view}</td>
-                                        <td class='text-center'>" . (int)$test['test_frequency'] . " {$escaper->escapeHtml($test['test_frequency'] > 1 ? $escaper->escapeHtml($lang['days']) : $escaper->escapeHtml($lang['Day']))}</td>
-                                        <td class='text-center'>{$escaper->escapeHtml($last_date)}</td>
-                                        <td class='text-center'>{$escaper->escapeHtml($next_date)}</td>
-                                        <td class='text-center'>{$auto_audit_initiation}</td>
-                                        <td class='text-center'>{$audit_initiation_offset}</td>
-                                        <td class='text-center'>" . (int)$test['approximate_time'] . " {$escaper->escapeHtml($test['approximate_time'] > 1 ? $escaper->escapeHtml($lang['minutes']) : $escaper->escapeHtml($lang['minute']))}</td>
-                                        <td class='text-center'>{$edit_row}{$delete_row}</td>
-                                    </tr>
-                ";
-                
-            }
-
-            $html .= "
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
-            ";
-
-            $data[] = [$html];
-
-        }
-
-        $result = array(
+        echo json_encode([
             'draw' => $draw,
-            'data' => $data,
-            'recordsTotal' => $recordsTotal,
-            'recordsFiltered' => $recordsTotal,
-        );
-        echo json_encode($result);
+            'data' => $result['data'],
+            'recordsTotal' => $result['recordsTotal'],
+            'recordsFiltered' => $result['recordsFiltered'],
+        ]);
     }
     else
     {
@@ -6763,10 +6593,23 @@ function getPlanMitigationsDatatableResponse()
             }
         }
 
-        // Get risks requiring mitigations
-        $risks = get_risks(1, $orderColumnName, $orderDir);
-
         $encryption_columns = array("regulation", "project", "risk_assessment", "additional_notes", "current_solution", "security_recommendations", "security_requirements", "comments");
+
+        $use_sql_pagination = (
+            empty($column_filters)
+            && $length != -1
+            && $orderColumnName !== 'management_review'
+            && $orderColumnName !== 'next_review_date'
+            && !(encryption_extra() && in_array($orderColumnName, $encryption_columns))
+        );
+
+        // Get risks requiring mitigations
+        if ($use_sql_pagination) {
+            $risks = get_risks(1, $orderColumnName, $orderDir, $start, $length);
+            $recordsTotal = get_risks_count_for_sort_order(1);
+        } else {
+            $risks = get_risks(1, $orderColumnName, $orderDir);
+        }
 
         if(encryption_extra()&&in_array($orderColumnName, $encryption_columns)){
             $decrypted_risks = array();
@@ -6786,16 +6629,18 @@ function getPlanMitigationsDatatableResponse()
 
         $risk_levels = get_risk_levels();
         $review_levels = get_review_levels();
+        $next_review_date_uses = get_setting('next_review_date_uses');
+        $catalog_maps = get_catalog_name_lookup_maps();
 
         // If we're ordering by the 'management_review' column
         if ($orderColumnName === 'management_review') {
             // Calculate the 'management_review' values
             foreach($risks as &$risk) {
-                $risk_level = get_risk_level_name($risk['calculated_risk']);
-                $residual_risk_level = get_risk_level_name($risk['residual_risk']);
+                $risk_level = get_risk_level_name_from_levels($risk['calculated_risk'], $risk_levels);
+                $residual_risk_level = get_risk_level_name_from_levels($risk['residual_risk'], $risk_levels);
 
                 // If next_review_date_uses setting is Residual Risk.
-                if(get_setting('next_review_date_uses') == "ResidualRisk")
+                if($next_review_date_uses == "ResidualRisk")
                 {
                     $next_review = next_review($residual_risk_level, $risk['id'], $risk['next_review'], false, $review_levels);
                 }
@@ -6828,11 +6673,11 @@ function getPlanMitigationsDatatableResponse()
         if ($orderColumnName === 'next_review_date') {
             // Calculate the 'management_review' values
             foreach($risks as &$risk) {
-                $risk_level = get_risk_level_name($risk['calculated_risk']);
-                $residual_risk_level = get_risk_level_name($risk['residual_risk']);
+                $risk_level = get_risk_level_name_from_levels($risk['calculated_risk'], $risk_levels);
+                $residual_risk_level = get_risk_level_name_from_levels($risk['residual_risk'], $risk_levels);
 
                 // If next_review_date_uses setting is Residual Risk.
-                if(get_setting('next_review_date_uses') == "ResidualRisk")
+                if($next_review_date_uses == "ResidualRisk")
                 {
                     $next_review = next_review($residual_risk_level, $risk['id'], $risk['next_review'], false, $review_levels);
                 }
@@ -6860,19 +6705,20 @@ function getPlanMitigationsDatatableResponse()
         }
 
         $review_levels = get_review_levels();
+        preload_last_review_dates(array_column($risks, 'id'));
         
         $risks_data = [];
         foreach ($risks as $key=>$risk)
         {
-            $color = get_risk_color($risk['calculated_risk']);
+            $color = get_risk_color_from_levels($risk['calculated_risk'], $risk_levels);
             
-            $residual_color = get_risk_color($risk['residual_risk']);
+            $residual_color = get_risk_color_from_levels($risk['residual_risk'], $risk_levels);
 
-            $risk_level = get_risk_level_name($risk['calculated_risk']);
-            $residual_risk_level = get_risk_level_name($risk['residual_risk']);
+            $risk_level = get_risk_level_name_from_levels($risk['calculated_risk'], $risk_levels);
+            $residual_risk_level = get_risk_level_name_from_levels($risk['residual_risk'], $risk_levels);
 
             // If next_review_date_uses setting is Residual Risk.
-            if(get_setting('next_review_date_uses') == "ResidualRisk")
+            if($next_review_date_uses == "ResidualRisk")
             {
                 $next_review = next_review($residual_risk_level, $risk['id'], $risk['next_review'], false, $review_levels, false);
             }
@@ -6890,22 +6736,23 @@ function getPlanMitigationsDatatableResponse()
             // unencrypted - so don't have to unencrypt again for filtering
             // unescaped - so you can find the correct items searching for '&'
             $filter_data = [];
+            $custom_values_by_field = [];
+            if (customization_extra()) {
+                require_once(realpath(__DIR__ . '/../extras/customization/index.php'));
+                foreach (getCustomFieldValuesByRiskId(convert_to_risk_id($risk['id'])) as $custom_value) {
+                    $custom_values_by_field[$custom_value['field_id']] = $custom_value;
+                }
+            }
             foreach($columns as $column){
                 switch ($column) {
                     default :
                         if(($pos = stripos($column, "custom_field_")) !== false){
                             if(customization_extra()){
                                 $field_id = str_replace("custom_field_", "", $column);
-                                $custom_values = getCustomFieldValuesByRiskId(convert_to_risk_id($risk['id']));
                                 $text = "";
-                                // Get value of custom filed
-                                foreach($custom_values as $custom_value)
-                                {
-                                    // Check if this custom value is for the active field
-                                    if($custom_value['field_id'] == $field_id){
-                                        $text = get_custom_field_name_by_value($field_id, $custom_value['field_type'], $custom_value['encryption'], $custom_value['value']);
-                                        break;
-                                    }
+                                if (isset($custom_values_by_field[$field_id])) {
+                                    $custom_value = $custom_values_by_field[$field_id];
+                                    $text = get_custom_field_name_by_value($field_id, $custom_value['field_type'], $custom_value['encryption'], $custom_value['value']);
                                 }
                                 $data_row[] = $text;
                                 $risk[$column] = strip_tags($text);
@@ -7054,7 +6901,7 @@ function getPlanMitigationsDatatableResponse()
                         break;
                     case "risk_mapping":
                         if (!empty($risk['risk_catalog_mapping'])) {
-                            $filter_data[$column] = get_names_by_multi_values("risk_catalog", $risk['risk_catalog_mapping'], false, ", ", true);
+                            $filter_data[$column] = resolve_names_by_multi_values($catalog_maps['risk_catalog'], $risk['risk_catalog_mapping']);
                             $data_row[] = $escaper->escapeHtml($filter_data[$column]);
                         } else {
                             $data_row[] = '';
@@ -7063,7 +6910,7 @@ function getPlanMitigationsDatatableResponse()
                         break;
                     case "threat_mapping":
                         if (!empty($risk['threat_catalog_mapping'])) {
-                            $filter_data[$column] = get_names_by_multi_values("threat_catalog", $risk['threat_catalog_mapping'], false, ", ", true);
+                            $filter_data[$column] = resolve_names_by_multi_values($catalog_maps['threat_catalog'], $risk['threat_catalog_mapping']);
                             $data_row[] = $escaper->escapeHtml($filter_data[$column]);
                         } else {
                             $data_row[] = '';
@@ -7130,7 +6977,7 @@ function getPlanMitigationsDatatableResponse()
         }
         $risks_by_page = [];
 
-        if($length == -1)
+        if($length == -1 || $use_sql_pagination)
         {
             $risks_by_page = $data;
         }
@@ -7140,7 +6987,9 @@ function getPlanMitigationsDatatableResponse()
                 $risks_by_page[] = $data[$i];
             }
         }
-        $recordsTotal = count($data);
+        if (!$use_sql_pagination) {
+            $recordsTotal = count($data);
+        }
         $result = array(
             'draw' => $draw,
             'data' => $risks_by_page,
@@ -7220,10 +7069,23 @@ function getManagementReviewsDatatableResponse()
             }
         }
 
-        // Get risks requiring mitigations
-        $risks = get_risks(2, $orderColumnName, $orderDir);
-
         $encryption_columns = array("regulation", "project", "risk_assessment", "additional_notes", "current_solution", "security_recommendations", "security_requirements", "comments");
+
+        $use_sql_pagination = (
+            empty($column_filters)
+            && $length != -1
+            && $orderColumnName !== 'management_review'
+            && $orderColumnName !== 'next_review_date'
+            && !(encryption_extra() && in_array($orderColumnName, $encryption_columns))
+        );
+
+        // Get risks requiring management review
+        if ($use_sql_pagination) {
+            $risks = get_risks(2, $orderColumnName, $orderDir, $start, $length);
+            $recordsTotal = get_risks_count_for_sort_order(2);
+        } else {
+            $risks = get_risks(2, $orderColumnName, $orderDir);
+        }
 
         if(encryption_extra()&&in_array($orderColumnName, $encryption_columns)){
             $decrypted_risks = array();
@@ -7243,16 +7105,18 @@ function getManagementReviewsDatatableResponse()
 
         $risk_levels = get_risk_levels();
         $review_levels = get_review_levels();
+        $next_review_date_uses = get_setting('next_review_date_uses');
+        $catalog_maps = get_catalog_name_lookup_maps();
 
         // If we're ordering by the 'management_review' column
         if ($orderColumnName === 'management_review') {
             // Calculate the 'management_review' values
             foreach($risks as &$risk) {
-                $risk_level = get_risk_level_name($risk['calculated_risk']);
-                $residual_risk_level = get_risk_level_name($risk['residual_risk']);
+                $risk_level = get_risk_level_name_from_levels($risk['calculated_risk'], $risk_levels);
+                $residual_risk_level = get_risk_level_name_from_levels($risk['residual_risk'], $risk_levels);
 
                 // If next_review_date_uses setting is Residual Risk.
-                if(get_setting('next_review_date_uses') == "ResidualRisk")
+                if($next_review_date_uses == "ResidualRisk")
                 {
                     $next_review = next_review($residual_risk_level, $risk['id'], $risk['next_review'], false, $review_levels);
                 }
@@ -7285,11 +7149,11 @@ function getManagementReviewsDatatableResponse()
         if ($orderColumnName === 'next_review_date') {
             // Calculate the 'management_review' values
             foreach($risks as &$risk) {
-                $risk_level = get_risk_level_name($risk['calculated_risk']);
-                $residual_risk_level = get_risk_level_name($risk['residual_risk']);
+                $risk_level = get_risk_level_name_from_levels($risk['calculated_risk'], $risk_levels);
+                $residual_risk_level = get_risk_level_name_from_levels($risk['residual_risk'], $risk_levels);
 
                 // If next_review_date_uses setting is Residual Risk.
-                if(get_setting('next_review_date_uses') == "ResidualRisk")
+                if($next_review_date_uses == "ResidualRisk")
                 {
                     $next_review = next_review($residual_risk_level, $risk['id'], $risk['next_review'], false, $review_levels);
                 }
@@ -7316,21 +7180,21 @@ function getManagementReviewsDatatableResponse()
             });
         }
 
-       
         $review_levels = get_review_levels();
+        preload_last_review_dates(array_column($risks, 'id'));
 
         $risks_data = [];
         foreach ($risks as $key=>$risk)
         {
-            $color = get_risk_color($risk['calculated_risk']);
+            $color = get_risk_color_from_levels($risk['calculated_risk'], $risk_levels);
 
-            $residual_color = get_risk_color($risk['residual_risk']);
+            $residual_color = get_risk_color_from_levels($risk['residual_risk'], $risk_levels);
 
-            $risk_level = get_risk_level_name($risk['calculated_risk']);
-            $residual_risk_level = get_risk_level_name($risk['residual_risk']);
+            $risk_level = get_risk_level_name_from_levels($risk['calculated_risk'], $risk_levels);
+            $residual_risk_level = get_risk_level_name_from_levels($risk['residual_risk'], $risk_levels);
 
             // If next_review_date_uses setting is Residual Risk.
-            if(get_setting('next_review_date_uses') == "ResidualRisk")
+            if($next_review_date_uses == "ResidualRisk")
             {
                 $next_review = next_review($residual_risk_level, $risk['id'], $risk['next_review'], false, $review_levels);
             }
@@ -7348,22 +7212,23 @@ function getManagementReviewsDatatableResponse()
             // unencrypted - so don't have to unencrypt again for filtering
             // unescaped - so you can find the correct items searching for '&'
             $filter_data = [];
+            $custom_values_by_field = [];
+            if (customization_extra()) {
+                require_once(realpath(__DIR__ . '/../extras/customization/index.php'));
+                foreach (getCustomFieldValuesByRiskId(convert_to_risk_id($risk['id'])) as $custom_value) {
+                    $custom_values_by_field[$custom_value['field_id']] = $custom_value;
+                }
+            }
             foreach($columns as $column){
                 switch ($column) {
                     default :
                         if(($pos = stripos($column, "custom_field_")) !== false){
                             if(customization_extra()){
                                 $field_id = str_replace("custom_field_", "", $column);
-                                $custom_values = getCustomFieldValuesByRiskId(convert_to_risk_id($risk['id']));
                                 $text = "";
-                                // Get value of custom filed
-                                foreach($custom_values as $custom_value)
-                                {
-                                    // Check if this custom value is for the active field
-                                    if($custom_value['field_id'] == $field_id) {
-                                        $text = get_custom_field_name_by_value($field_id, $custom_value['field_type'], $custom_value['encryption'], $custom_value['value']);
-                                        break;
-                                    }
+                                if (isset($custom_values_by_field[$field_id])) {
+                                    $custom_value = $custom_values_by_field[$field_id];
+                                    $text = get_custom_field_name_by_value($field_id, $custom_value['field_type'], $custom_value['encryption'], $custom_value['value']);
                                 }
                                 $data_row[] = $text;
                                 $risk[$column] = strip_tags($text);
@@ -7512,7 +7377,7 @@ function getManagementReviewsDatatableResponse()
                         break;
                     case "risk_mapping":
                         if (!empty($risk['risk_catalog_mapping'])) {
-                            $filter_data[$column] = get_names_by_multi_values("risk_catalog", $risk['risk_catalog_mapping'], false, ", ", true);
+                            $filter_data[$column] = resolve_names_by_multi_values($catalog_maps['risk_catalog'], $risk['risk_catalog_mapping']);
                             $data_row[] = $escaper->escapeHtml($filter_data[$column]);
                         } else {
                             $data_row[] = '';
@@ -7521,7 +7386,7 @@ function getManagementReviewsDatatableResponse()
                         break;
                     case "threat_mapping":
                         if (!empty($risk['threat_catalog_mapping'])) {
-                            $filter_data[$column] = get_names_by_multi_values("threat_catalog", $risk['threat_catalog_mapping'], false, ", ", true);
+                            $filter_data[$column] = resolve_names_by_multi_values($catalog_maps['threat_catalog'], $risk['threat_catalog_mapping']);
                             $data_row[] = $escaper->escapeHtml($filter_data[$column]);
                         } else {
                             $data_row[] = '';
@@ -7587,7 +7452,7 @@ function getManagementReviewsDatatableResponse()
         }
         $risks_by_page = [];
 
-        if($length == -1)
+        if($length == -1 || $use_sql_pagination)
         {
             $risks_by_page = $data;
         }
@@ -7597,7 +7462,9 @@ function getManagementReviewsDatatableResponse()
                 $risks_by_page[] = $data[$i];
             }
         }
-        $recordsTotal = count($data);
+        if (!$use_sql_pagination) {
+            $recordsTotal = count($data);
+        }
         $result = array(
             'draw' => $draw,
             'data' => $risks_by_page,
@@ -7693,6 +7560,7 @@ function getReviewRisksDatatableResponse()
 
         $risk_levels = get_risk_levels();
         $next_review_date_uses = get_setting('next_review_date_uses');
+        $catalog_maps = get_catalog_name_lookup_maps();
 
         $review_levels = get_review_levels();
 
@@ -7700,11 +7568,11 @@ function getReviewRisksDatatableResponse()
         if ($orderColumnName === 'management_review') {
             // Calculate the 'management_review' values
             foreach($risks as &$risk) {
-                $risk_level = get_risk_level_name($risk['calculated_risk']);
-                $residual_risk_level = get_risk_level_name($risk['residual_risk']);
+                $risk_level = get_risk_level_name_from_levels($risk['calculated_risk'], $risk_levels);
+                $residual_risk_level = get_risk_level_name_from_levels($risk['residual_risk'], $risk_levels);
 
                 // If next_review_date_uses setting is Residual Risk.
-                if(get_setting('next_review_date_uses') == "ResidualRisk")
+                if($next_review_date_uses == "ResidualRisk")
                 {
                     $next_review = next_review($residual_risk_level, $risk['id'], $risk['next_review'], false, $review_levels);
                 }
@@ -7829,22 +7697,23 @@ function getReviewRisksDatatableResponse()
             // unencrypted - so don't have to unencrypt again for filtering
             // unescaped - so you can find the correct items searching for '&'
             $filter_data = [];
+            $custom_values_by_field = [];
+            if (customization_extra()) {
+                require_once(realpath(__DIR__ . '/../extras/customization/index.php'));
+                foreach (getCustomFieldValuesByRiskId(convert_to_risk_id($risk['id'])) as $custom_value) {
+                    $custom_values_by_field[$custom_value['field_id']] = $custom_value;
+                }
+            }
             foreach($columns as $column){
                 switch ($column) {
                     default :
                         if(($pos = stripos($column, "custom_field_")) !== false){
                             if(customization_extra()){
                                 $field_id = str_replace("custom_field_", "", $column);
-                                $custom_values = getCustomFieldValuesByRiskId(convert_to_risk_id($risk['id']));
                                 $text = "";
-                                // Get value of custom filed
-                                foreach($custom_values as $custom_value)
-                                {
-                                    // Check if this custom value is for the active field
-                                    if($custom_value['field_id'] == $field_id){
-                                        $text = get_custom_field_name_by_value($field_id, $custom_value['field_type'], $custom_value['encryption'], $custom_value['value']);
-                                        break;
-                                    }
+                                if (isset($custom_values_by_field[$field_id])) {
+                                    $custom_value = $custom_values_by_field[$field_id];
+                                    $text = get_custom_field_name_by_value($field_id, $custom_value['field_type'], $custom_value['encryption'], $custom_value['value']);
                                 }
                                 $data_row[] = $text;
                                 $risk[$column] = strip_tags($text);
@@ -7997,7 +7866,7 @@ function getReviewRisksDatatableResponse()
                         break;
                     case "risk_mapping":
                         if (!empty($risk['risk_catalog_mapping'])) {
-                            $filter_data[$column] = get_names_by_multi_values("risk_catalog", $risk['risk_catalog_mapping'], false, ", ", true);
+                            $filter_data[$column] = resolve_names_by_multi_values($catalog_maps['risk_catalog'], $risk['risk_catalog_mapping']);
                             $data_row[] = $escaper->escapeHtml($filter_data[$column]);
                         } else {
                             $data_row[] = '';
@@ -8006,7 +7875,7 @@ function getReviewRisksDatatableResponse()
                         break;
                     case "threat_mapping":
                         if (!empty($risk['threat_catalog_mapping'])) {
-                            $filter_data[$column] = get_names_by_multi_values("threat_catalog", $risk['threat_catalog_mapping'], false, ", ", true);
+                            $filter_data[$column] = resolve_names_by_multi_values($catalog_maps['threat_catalog'], $risk['threat_catalog_mapping']);
                             $data_row[] = $escaper->escapeHtml($filter_data[$column]);
                         } else {
                             $data_row[] = '';
@@ -12522,9 +12391,18 @@ function recent_commented_risk_datatable() {
         SELECT SQL_CALC_FOUND_ROWS a.calculated_risk, b.*, ROUND((a.calculated_risk - (a.calculated_risk * IF(IFNULL(mg.mitigation_percent,0) > 0, mg.mitigation_percent, IFNULL(MAX(IF(mtc.validation_mitigation_percent > 0, mtc.validation_mitigation_percent, fc.mitigation_percent)), 0)) / 100)), 2) as residual_risk
         FROM risk_scoring a
             LEFT JOIN (
-                SELECT *,
-                    (SELECT `comment` FROM `comments` c WHERE c.risk_id = r.id ORDER BY c.date DESC LIMIT 1) as `comment`,
-                    (SELECT `date` FROM `comments` cd WHERE cd.risk_id = r.id ORDER BY cd.date DESC LIMIT 1) AS `comment_date` FROM risks r ) b ON a.id = b.id
+                SELECT r.*, lc.comment, lc.date AS comment_date
+                FROM risks r
+                LEFT JOIN (
+                    SELECT c1.risk_id, c1.comment, c1.date
+                    FROM comments c1
+                    INNER JOIN (
+                        SELECT risk_id, MAX(date) AS max_date
+                        FROM comments
+                        GROUP BY risk_id
+                    ) c2 ON c1.risk_id = c2.risk_id AND c1.date = c2.max_date
+                ) lc ON r.id = lc.risk_id
+            ) b ON a.id = b.id
             LEFT JOIN (SELECT c1.risk_id, c1.next_review FROM mgmt_reviews c1 RIGHT JOIN (SELECT risk_id, MAX(submission_date) AS date FROM mgmt_reviews GROUP BY risk_id) AS c2 ON c1.risk_id = c2.risk_id AND c1.submission_date = c2.date) c ON a.id = c.risk_id
             LEFT JOIN mitigations mg ON b.id = mg.risk_id
             LEFT JOIN mitigation_to_controls mtc ON mg.id = mtc.mitigation_id

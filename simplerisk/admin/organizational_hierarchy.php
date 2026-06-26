@@ -16,12 +16,26 @@
 		if (isset($_POST['activate'])) {
 			// Enable the Advanced Search Extra
 			enable_organizational_hierarchy_extra();
+			refresh();
 		}
 
 		// If the user wants to deactivate the extra
 		if (isset($_POST['deactivate'])) {
-			// Disable the Advanced Search Extra
+			// Disable the Organizational Hierarchy Extra and end with refresh()
+			// (Post/Redirect/Get). organizational_hierarchy_extra() is memoized
+			// in $GLOBALS the first time it is called — and render_header_and_
+			// sidebar() above already called it (the BU menu render in header.php
+			// seeds it true) — so without a redirect the page body below would
+			// re-render against that stale memo and still look activated, forcing
+			// a second click to see the deactivated state. The redirect starts a
+			// fresh GET where the header reads the now-cleared setting. This
+			// handler is the form on this page only; core's bulk deactivator
+			// (core_deactivate_extra) is separate code, so disable_*_extra()
+			// itself stays redirect-free. Matches the separation/api/encryption
+			// deactivate handling.
 			disable_organizational_hierarchy_extra();
+			set_alert(true, "good", "Organizational Hierarchy Extra deactivated. Business Unit scoping is off; your Business Units, team links and per-user selections were preserved.");
+			refresh();
 		}
 	}
 
@@ -62,24 +76,9 @@
 					</div>
 				";
 
-			// Once it has been activated
-			} else {
-
-				// Include the Organizational Hierarchy Extra
-				require_once(realpath(__DIR__ . '/../extras/organizational_hierarchy/index.php'));
-
-				echo "
-					<div class='card-body my-2 border'>
-						<form id='deactivate_extra' name='deactivate' method='post'>
-							<font color='green'>
-								<b>{$escaper->escapeHtml($lang['Activated'])}</b>
-							</font> 
-							[" . organizational_hierarchy_version() . "]
-							<input type='submit' name='deactivate' value='" . $escaper->escapeHtml($lang['Deactivate']) . "' class='btn btn-dark ms-2'/>
-						</form>
-					</div>
-				";
-
+			// Once it has been activated, the Business Unit treegrid and the
+			// Deactivate panel are rendered in the page body below — Deactivate
+			// sits at the bottom, matching the api/encryption/authentication extras.
 			}
 
 		// Otherwise, the Extra does not exist
@@ -117,7 +116,24 @@
 		</table>
 	</div>
 	<?php
-		} 
+			// Deactivate control — rendered at the bottom of the page, matching
+			// the placement used by the api/encryption/authentication extras.
+			echo "
+				<div class='card-body my-2 border border-danger'>
+					<h4 class='mb-1'>{$escaper->escapeHtml($lang['Deactivate'])} the Organizational Hierarchy Extra</h4>
+					<p class='text-muted small mb-3'>
+						Deactivating turns this extra off — Business Unit scoping stops and this page
+						reverts to the <em>Activate</em> state (as if it had never been activated). Your
+						Business Units, team links and per-user selections are kept, so you can re-activate
+						at any time without reconfiguring.
+					</p>
+					<form id='deactivate_extra' name='deactivate' method='post' class='mb-0'
+					      onsubmit=\"return confirm('Deactivate the Organizational Hierarchy Extra? Business Unit scoping will stop until it is re-activated.');\">
+						<button type='submit' name='deactivate' class='btn btn-danger'>{$escaper->escapeHtml($lang['Deactivate'])} Organizational Hierarchy Extra</button>
+					</form>
+				</div>
+			";
+		}
 	?>
 </div>
 
@@ -268,7 +284,7 @@
 			url: BASE_URL + '/api/v2/organizational_hierarchy/business_unit/available_business_unit_menu_items',
 			type: 'GET',
 			success : function (response) {
-				$('li.dropdown-submenu.business-units ul.dropdown-menu').html(response);
+				$('.business-unit-switcher-items').html(response);
 			},
 			error: function(xhr, status, error) {
 				if(!retryCSRF(xhr, this)) {
@@ -622,7 +638,7 @@
 					var teamCountWrapper = $('tr[node-id=' + business_unit_id +'] span.team-count');
 					var teamCount = parseInt(teamCountWrapper.data('team-count'));
 					teamCountWrapper.data('team-count', teamCount-1);
-					teamCountWrapper.html(teamCount-1);
+					teamCountWrapper.html('(' + (teamCount-1) + ')');
 				},
 				error: function(xhr, status, error){
 					if(!retryCSRF(xhr, this)) {

@@ -13,7 +13,7 @@ require_once(realpath(__DIR__ . '/../includes/functions.php'));
 require_once(realpath(__DIR__ . '/../includes/promises.php'));
 require_once(realpath(__DIR__ . '/../includes/workers.php'));
 require_once(realpath(__DIR__ . '/../includes/files.php'));
-require_once(realpath(__DIR__ . '/../includes/artificial_intelligence.php'));
+require_once(realpath(__DIR__ . '/../includes/promises.php'));
 require_once(realpath(__DIR__ . '/../includes/tf_idf_enrichment.php'));
 require_once(realpath(__DIR__ . '/../includes/Components/DocumentTextHandler.php'));
 require_once(realpath(__DIR__ . '/../includes/Components/CsvHandler.php'));

@@ -3,15 +3,25 @@
 * License, v. 2.0. If a copy of the MPL was not distributed with this
 * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-// Render the header and sidebar
 require_once(realpath(__DIR__ . '/../includes/renderutils.php'));
+require_once(realpath(__DIR__ . '/../includes/extras.php'));
+
+// API profile key POSTs must run before any HTML so PRG redirects work.
+if (api_extra() && is_dir(realpath(__DIR__ . '/../extras/api'))) {
+    require_once(realpath(__DIR__ . '/../extras/api/index.php'));
+    $api_action = $_POST['action'] ?? '';
+    if ($_SERVER['REQUEST_METHOD'] === 'POST'
+        && in_array($api_action, ['api_profile_create', 'api_profile_toggle', 'api_profile_delete'], true)
+        && !empty($_SESSION['uid'])) {
+        api_profile_handle_post((int)$_SESSION['uid']);
+    }
+}
 
 $breadcrumb_title_key = "Profile Details";
 render_header_and_sidebar(['CUSTOM:permissions-widget.js'], breadcrumb_title_key: $breadcrumb_title_key);
 
 // Include required functions file
 require_once(realpath(__DIR__ . '/../includes/messages.php'));
-require_once(realpath(__DIR__ . '/../includes/extras.php'));
 
 // If the language was changed
 if (isset($_POST['change_language'])) {

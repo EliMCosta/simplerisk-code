@@ -1206,12 +1206,11 @@
     // ---------------------------------------------------------------------------
     // Fallback tile set rendered when the catalog API fails.
     //
-    // These three tiles — Preferences, Health Check, and About — give the
-    // admin a clickable recovery path: Preferences is where default values
-    // and behavioral toggles live (the most-likely first stop), Health
-    // Check is where the admin can diagnose what's wrong, and About
-    // identifies the SimpleRisk version. They render through the same
-    // buildTile() pipeline as catalog tiles so they look identical.
+    // These two tiles — Preferences and Health Check — give the admin a
+    // clickable recovery path: Preferences is where default values and
+    // behavioral toggles live (the most-likely first stop), and Health Check
+    // is where the admin can diagnose what's wrong. They render through the
+    // same buildTile() pipeline as catalog tiles so they look identical.
     // ---------------------------------------------------------------------------
     var FALLBACK_TILES = [
         {
@@ -1230,23 +1229,14 @@
             tags:        ['system'],
             favorited:   false,
         },
-        {
-            key:         'register',
-            label:       'Register & Upgrade',
-            description: '',
-            path:        'admin/register.php',
-            tags:        ['system'],
-            favorited:   false,
-        },
     ];
 
     // Localize the hardcoded English label using the existing $lang lookup.
-    // The lang keys here ('Preferences', 'HealthCheck', 'RegisterAndUpgrade')
-    // are guaranteed loaded by the page's required_localization_keys list.
+    // The lang keys here ('Preferences', 'HealthCheck') are guaranteed loaded
+    // by the page's required_localization_keys list.
     var FALLBACK_LANG_KEY = {
         settings_preferences: 'Preferences',
         health_check:         'HealthCheck',
-        register:             'RegisterAndUpgrade',
     };
     function localizedFallbackTiles() {
         return FALLBACK_TILES.map(function (t) {
@@ -1268,11 +1258,11 @@
 
         // Render the fallback tiles using the same pipeline as the success
         // path. renderCatalog() clears .hub__main, then groups by tag — the
-        // two fallback tiles both carry the 'system' tag and will land in
-        // the System section. Force the chip to 'all' so the tiles are
-        // visible regardless of what the URL state had selected (e.g. if
-        // the user landed on the page with ?fav=1, neither fallback tile
-        // is favorited and the favorites filter would hide them).
+        // fallback tiles carry the 'customization' and 'system' tags and land
+        // in their respective sections. Force the chip to 'all' so the tiles
+        // are visible regardless of what the URL state had selected (e.g. if
+        // the user landed on the page with ?fav=1, neither fallback tile is
+        // favorited and the favorites filter would hide them).
         activeChip    = 'all';
         activeFavOnly = false;
         activeSearch  = '';

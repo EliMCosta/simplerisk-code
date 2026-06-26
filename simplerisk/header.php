@@ -838,13 +838,20 @@ foreach ($required_scripts_or_css as $required_script_or_css) {
 		<script src="../js/simplerisk/<?= $matches[1] ?>?<?= $current_app_version ?>" defer></script>
 <?php       // Custom scripts within extras
             } elseif (preg_match("/^EXTRA:JS:([\w_]+):((?:[\w,\s-]+\/)*[\w,\s-]+\.js)$/", $required_script_or_css, $matches)) {
+                $extra_script = realpath(__DIR__ . "/extras/{$matches[1]}/js/{$matches[2]}");
+                if ($extra_script !== false && is_file($extra_script)) {
 ?>
 		<script src="../extras/<?= $matches[1] ?>/js/<?= $matches[2] ?>?<?= $current_app_version ?>" defer></script>
-<?php       // Custom css within extras
+<?php
+                }
+            // Custom css within extras
             } elseif (preg_match("/^EXTRA:CSS:([\w_]+):((?:[\w,\s-]+\/)*[\w,\s-]+\.js)$/", $required_script_or_css, $matches)) {
+                $extra_stylesheet = realpath(__DIR__ . "/extras/{$matches[1]}/css/{$matches[2]}");
+                if ($extra_stylesheet !== false && is_file($extra_stylesheet)) {
 ?>
 		<link rel="stylesheet" href="../extras/<?= $matches[1] ?>/css/<?= $matches[2] ?>?<?= $current_app_version ?>">
-<?php 
+<?php
+                }
             }
             break;
         }
@@ -909,9 +916,6 @@ if (!advanced_search_extra()) { ?>
            
             <!-- Right side toggle and nav items -->
             <ul class="navbar-nav float-end">
-<?php if (!empty($permissions['show_ai_chat']) && artificial_intelligence_extra() && get_setting('ai_api_key')): ?>
-              <?php require_once(realpath(__DIR__ . '/extras/artificial_intelligence/includes/chat.php')); ai_render_chat_icon(); ?>
-<?php endif; ?>
 			  <li class="nav-item dropdown">
                 <a class="nav-link dropdown-toggle waves-effect waves-dark"
                    href="#"
@@ -958,6 +962,16 @@ if (!advanced_search_extra()) { ?>
               </li>
               <!-- End of Help dropdown -->
 
+              <!-- Business Unit switcher (Organizational Hierarchy Extra).
+                   Always-visible chip showing the current BU; click to switch.
+                   Admins are hidden (switching is a no-op for them). -->
+<?php
+    if (organizational_hierarchy_extra()) {
+        require_once(realpath(__DIR__) . '/extras/organizational_hierarchy/index.php');
+        render_business_unit_selection_menu();
+    }
+?>
+
               <!-- Settings Hub cog (admin OR vm_configure OR im_configure) -->
 <?php
     require_once(realpath(__DIR__ . '/includes/settings_catalog.php'));
@@ -984,12 +998,6 @@ if (!advanced_search_extra()) { ?>
                 </a>
 		        <ul class="dropdown-menu dropdown-menu-end animated">
 			      <li><a class="dropdown-item" href="../account/profile.php"><i class="fa fa-user me-1 ms-1"></i> <?= $escaper->escapeHtml($lang['MyProfile']);?></a></li>
-<?php
-                    if (organizational_hierarchy_extra()) {
-                        require_once(realpath(__DIR__) . '/extras/organizational_hierarchy/index.php');
-                        render_business_unit_selection_menu();
-                    }
-?>
 	              <li><a class="dropdown-item" href="../logout.php"><i class="fa fa-power-off me-1 ms-1"></i><?= $escaper->escapeHtml($lang['Logout']);?></a></li>
                 </ul>
               </li>
@@ -1000,8 +1008,5 @@ if (!advanced_search_extra()) { ?>
           </div>
         </nav>
       </header>
-<?php if (!empty($permissions['show_ai_chat']) && artificial_intelligence_extra() && get_setting('ai_api_key') && function_exists('ai_render_chat_panel')): ?>
-      <?php ai_render_chat_panel(); ?>
-<?php endif; ?>
 
       <div id="load" style="display:none;"><?=$escaper->escapeHtml($lang['SendingRequestPleaseWait'])?></div>

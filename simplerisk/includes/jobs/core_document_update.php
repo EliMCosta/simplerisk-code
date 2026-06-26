@@ -80,17 +80,8 @@ return [
             'convert_document_to_text',
             'calculate_keywords',
             'calculate_tfidf',
+            'clean_tmp',
         ];
-
-        // If the Artificial Intelligence Extra is active
-        if (artificial_intelligence_extra())
-        {
-            // Add it to the stage
-            $stages[] = 'check_and_launch_ai';
-        }
-
-        // Add the final clean_tmp stage
-        $stages[] = 'clean_tmp';
 
         $prev_promise_id = null;
         foreach ($stages as $stage_name) {
@@ -213,28 +204,6 @@ return [
             compute_document_control_scores([$document_id]);
 
             write_debug_log("Document Update: Completed TF-IDF calculations for document {$document_id}", "info");
-
-            return $payload;
-        },
-
-        'check_and_launch_ai' => function(array $promise, PDO $db) {
-            $payload = json_decode($promise['payload'], true) ?? [];
-            $document_id = $payload['document_id'] ?? null;
-
-            // If the Artificial Intelligence Extra is active
-            if (artificial_intelligence_extra())
-            {
-                write_debug_log("Artificial Intelligence Extra is enabled.", "debug");
-
-                // Run the AI Document to Control the chunking process
-                $queue_task_payload = [
-                    'triggered_at' => time(),
-                    'document_id' => $document_id,
-                    'update_document' => false,
-                ];
-                queue_task($db, 'ai_document_to_control_chunker', $queue_task_payload, 25, 5, 3600);
-            }
-            else write_debug_log("Artificial Intelligence Extra is disabled.", "debug");
 
             return $payload;
         },

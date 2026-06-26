@@ -1160,10 +1160,6 @@ function add_session_check($permissions = [])
 				    write_debug_log("Vulnerability Management 'Configure' permission is required.", "debug");
 				    enforce_permission("vm_configure");
 				    break;
-                case "check_ai":
-                    write_debug_log("Artificial Intelligence permission is required.", "debug");
-                    enforce_permission("ai_access");
-                    break;
 			}
 		}
 	}

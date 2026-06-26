@@ -10,7 +10,6 @@ require_once(realpath(__DIR__ . '/includes/assets.php'));
 require_once(realpath(__DIR__ . '/includes/governance.php'));
 require_once(realpath(__DIR__ . '/includes/risks.php'));
 require_once(realpath(__DIR__ . '/includes/compliance.php'));
-require_once(realpath(__DIR__ . '/includes/artificial_intelligence.php'));
 require_once(realpath(__DIR__ . '/includes/reporting.php'));
 require_once(realpath(__DIR__ . '/../../includes/functions.php'));
 require_once(realpath(__DIR__ . '/../../includes/authenticate.php'));
@@ -129,9 +128,6 @@ if (api_v2_is_authenticated())
     app()->delete('/compliance/audits/{id}', 'deleteAuditById');
     /************************* END COMPLIANCE CRUD API ****************************/
 
-    // SimpleRisk Artificial Intelligence Routes
-    app()->get('/ai/recommendations', 'api_v2_ai_recommendations');
-
     // SimpleRisk Reports Routes
     app()->get('/reports/risk/average', 'api_v2_reports_risk_average');
     app()->get('/reports/risk/opencount', 'api_v2_reports_risk_open_count');
@@ -175,6 +171,7 @@ if (api_v2_is_authenticated())
     app()->post('/risks/{id}/reopen', 'reopenForm');
     app()->get('/risks/{id}/comments', 'getRiskComments');
     app()->post('/risks/{id}/comments', 'saveCommentForm');
+    app()->get('/risks/{id}/audit-trail', 'getRiskAuditTrail');
     app()->post('/risks/{id}/accept-mitigation', 'acceptMitigationForm');
     /************************* END RISKS CRUD API ****************************/
     app()->get('/admin', 'show_admin');
@@ -372,6 +369,7 @@ if (api_v2_is_authenticated())
     // Return scoring histories
     app()->get('/management/risk/scoring_history', 'scoringHistory');
     app()->get('/management/risk/residual_scoring_history', 'residualScoringHistory');
+    app()->get('/management/risk/score_over_time', 'scoreOverTimeForm');
 
     // Get manager by owner
     app()->get('/user/manager', 'getManagerByUserAPI');
@@ -471,23 +469,6 @@ if (api_v2_is_authenticated())
 
             // Get the api routes
             get_api_routes();
-        }
-    }
-
-    // If the Artificial Intelligence Extra is enabled
-    if (artificial_intelligence_extra())
-    {
-        // Required file
-        $required_file = realpath(__DIR__ . '/../../extras/artificial_intelligence/includes/api.php');
-
-        // If the file exists
-        if (file_exists($required_file))
-        {
-            // Include the required file
-            require_once($required_file);
-
-            // Get the artificial intelligence routes
-            get_artificial_intelligence_routes();
         }
     }
 

@@ -10164,7 +10164,7 @@ function upgrade_from_20260422001($db) {
     // Seed default favorite settings tiles for every existing user so
     // the Settings Hub has a useful starting set after the upgrade
     // lands. New users from here on get the same defaults via add_user().
-    // The list (settings_preferences, health_check, register) lives in
+    // The list (settings_preferences, health_check) lives in
     // default_favorite_settings_keys() in settings_catalog.php — edit
     // it there to change the set. Idempotent: INSERT IGNORE preserves
     // any pre-existing favorites and a user who later unfavorites one
@@ -10296,6 +10296,11 @@ function upgrade_from_20260422001($db) {
     // as this session variable is not set by the previous version of the login logic
     $_SESSION['latest_version_app'] = latest_version('app');
 
+    if (!index_exists_on_table('framework_control_tests_framework_control_id_idx', 'framework_control_tests')) {
+        echo "Adding index on `framework_control_tests`.`framework_control_id`.<br />\n";
+        $stmt = $db->prepare("CREATE INDEX framework_control_tests_framework_control_id_idx ON `framework_control_tests`(`framework_control_id`);");
+        $stmt->execute();
+    }
 
     // Update the database version
     update_database_version($db, $version_to_upgrade, $version_upgrading_to);

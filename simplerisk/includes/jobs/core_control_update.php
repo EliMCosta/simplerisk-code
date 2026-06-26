@@ -69,17 +69,8 @@ return [
             'fetch_control',
             'calculate_keywords',
             'calculate_tfidf',
+            'clean_tmp_files',
         ];
-
-        // If the Artificial Intelligence Extra is active
-        if (artificial_intelligence_extra())
-        {
-            // Add it to the stage
-            $stages[] = 'check_and_launch_ai';
-        }
-
-        // Finalize by cleaning the tmp files
-        $stages[] = 'clean_tmp_files';
 
         $prev_promise_id = null;
         foreach ($stages as $stage_name) {
@@ -213,62 +204,6 @@ return [
                 write_debug_log("[calculate_tfidf] Failed to calculate keywords for #{$promise['id']}: " . $e->getMessage(), "error");
                 throw $e;
             }
-
-            return $payload;
-        },
-
-        'check_and_launch_ai' => function(array $promise, PDO $db) {
-            $payload = json_decode($promise['payload'], true) ?? [];
-            $matches_ref = $payload['matches_ref'] ?? null;
-            $control_id = $payload['control_id'] ?? null;
-
-            // If the Artificial Intelligence Extra is active
-            if (artificial_intelligence_extra())
-            {
-                write_debug_log("Artificial Intelligence Extra is enabled.", "debug");
-
-                // Check if the control still exists
-                $stmt = $db->prepare("SELECT 1 FROM framework_controls WHERE id = :id");
-                $stmt->execute([':id' => $control_id]);
-                $exists = (bool)$stmt->fetchColumn();
-                if (!$exists) {
-                    cancel_control_task(
-                        $db,
-                        $promise,
-                        'Control deleted during check_and_launch_ai'
-                    );
-                    return $payload; // graceful, terminal exit
-                }
-
-                // Load the matches
-                $matches = load_tmp_data($db, $matches_ref);
-
-                // Filter the matches for only the specified control_id value
-                $filteredMatches = array_values(array_filter($matches, fn($row) => $row['control_id'] == $control_id));
-
-                // For each of the documents that are possible matches
-                foreach ($filteredMatches as $match)
-                {
-                    // Get the document_id, control_id and score
-                    $document_id = $match['document_id'] ?? null;
-                    $control_id = $match['control_id'] ?? null;
-
-                    // If no document_id, control_id or score was provided
-                    if (!$control_id || !$document_id) throw new Exception("Missing document_id or control_id");
-
-                    write_debug_log("[check_and_launch_ai] Queueing ai_control_to_document_process task for document #{$document_id} and control #{$control_id}.", "debug");
-
-                    // Run the AI Control to Document matching process
-                    $queue_task_payload = [
-                        'triggered_at' => time(),
-                        'control_id' => (int)$control_id,
-                        'document_id' => (int)$document_id,
-                        'update_control' => false,
-                    ];
-                    queue_task($db, 'ai_control_to_document_process', $queue_task_payload, 25, 5, 3600);
-                }
-            }
-            else write_debug_log("[check_and_launch_ai] Artificial Intelligence Extra is disabled.", "debug");
 
             return $payload;
         },

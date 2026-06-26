@@ -64,7 +64,6 @@ function available_extras()
     $extras = array(
         array("short_name" => "advanced_search", "long_name" => "Advanced Search Extra"),
         array("short_name" => "api", "long_name" => "API Extra"),
-        array("short_name" => "artificial_intelligence", "long_name" => "Artificial Intelligence Extra"),
         array("short_name" => "assessments", "long_name" => "Risk Assessment Extra"),
         array("short_name" => "authentication", "long_name" => "Custom Authentication Extra"),
         array("short_name" => "complianceforgescf", "long_name" => "ComplianceForge SCF Extra"),
@@ -135,8 +134,6 @@ function core_extra_current_version($extra)
                     return ADVANCED_SEARCH_EXTRA_VERSION;
                 case "api":
                     return API_EXTRA_VERSION;
-                case "artificial_intelligence":
-                    return ARTIFICIAL_INTELLIGENCE_EXTRA_VERSION;
                 case "assessments":
                     return ASSESSMENTS_EXTRA_VERSION;
                 case "authentication":
@@ -187,8 +184,6 @@ function core_extra_activated($extra)
                 return advanced_search_extra();
             case "api":
                 return api_extra();
-            case "artificial_intelligence":
-                return artificial_intelligence_extra();
             case "assessments":
                 return assessments_extra();
             case "authentication":
@@ -239,8 +234,6 @@ function core_extra_activated_link($extra)
             return "<a class='text-info m-l-10' href='advanced_search.php'>" . $escaper->escapeHtml($lang['Configure']) . "</a>";
         case "api":
             return "<a class='text-info m-l-10' href='api.php'>" . $escaper->escapeHtml($lang['Configure']) . "</a>";
-        case "artificial_intelligence":
-            return "<a class='text-info m-l-10' href='artificial_intelligence.php'>" . $escaper->escapeHtml($lang['Configure']) . "</a>";
         case "assessments":
             return "<a class='text-info m-l-10' href='assessments.php'>" . $escaper->escapeHtml($lang['Configure']) . "</a>";
         case "authentication":
@@ -703,10 +696,6 @@ function core_get_action_button($extra_name, $purchased, $installed, $activated,
             $button_name = "get_workflows_extra";
             $action_link = "workflows.php";
             break;
-        case "artificial_intelligence":
-            $button_name = "get_artificial_intelligence_extra";
-            $action_link = "artificial_intelligence.php";
-            break;
     }
 
     // If the Extra has been purchased
@@ -969,8 +958,26 @@ function simplerisk_license_check_purchases()
 		// For each available Extra
 		foreach ($extras as $extra)
 		{
-			// If this is not the Upgrade or ComplianceForge SCF Extra
-			if ($extra['short_name'] != "upgrade" && $extra['short_name'] != "complianceforgescf")
+			// Extras exempt from the commercial license check.
+			//   upgrade / complianceforgescf: exempt upstream (the Upgrade
+			//     Extra is not separately licensed; SCF is covered by the
+			//     support purchase).
+			//   self-built Extras under extras/ that share a short_name with a
+			//     commercial Extra but have no server-side purchase. Without this
+			//     exemption the server reports them as failing and they get
+			//     auto-deleted after 30 days. Re-apply this list after a
+			//     SimpleRisk upgrade (core ships this file).
+			//     Current self-built Extras:
+			//       api, authentication, encryption, import-export,
+			//       organizational_hierarchy, separation, customization.
+			$license_exempt_extras = [
+				'upgrade', 'complianceforgescf',
+				'api', 'authentication', 'encryption', 'import-export',
+				'organizational_hierarchy', 'separation', 'customization',
+			];
+
+			// If this Extra is not exempt from the license check
+			if (!in_array($extra['short_name'], $license_exempt_extras))
 			{
 				// Get the license information
 				$extras_xml = $purchases->{"extras"};
@@ -1118,9 +1125,6 @@ function core_deactivate_extra($extra)
 				case "api":
 					disable_api_extra();
 					return true;
-                case "artificial_intelligence":
-                    disable_artificial_intelligence_extra();
-                    return true;
 				case "assessments":
 					disable_assessments_extra();
 					return true;

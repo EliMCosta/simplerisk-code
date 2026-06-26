@@ -3,11 +3,9 @@
 * License, v. 2.0. If a copy of the MPL was not distributed with this
 * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-// Render the header and sidebar
 require_once(realpath(__DIR__ . '/../includes/renderutils.php'));
-render_header_and_sidebar([], ['check_admin' => true], 'API Extra', 'Configure', 'Extras');
 
-// If the extra directory exists
+// Handle POST before any HTML output so Post/Redirect/Get redirects work.
 if (is_dir(realpath(__DIR__ . '/../extras/api'))) {
 	// Include the API Extra
 	require_once(realpath(__DIR__ . '/../extras/api/index.php'));
@@ -16,21 +14,25 @@ if (is_dir(realpath(__DIR__ . '/../extras/api'))) {
 	if (isset($_POST['activate'])) {
 		// Enable the API Extra
 		enable_api_extra();
+		refresh();
 	}
 
 	// If the user wants to deactivate the extra
 	if (isset($_POST['deactivate'])) {
 		// Disable the API Extra
 		disable_api_extra();
+		refresh();
 	}
 
 	// If the user updated the configuration
 	if (isset($_POST['submit'])) {
-		// Update the api configuration
+		// Update the api configuration (ends with refresh() on success)
 		update_api_config();
-		set_alert(true, "good", $escaper->escapeHtml($lang['APISettingsUpdatedSuccessfully']));
 	}
 }
+
+// Render the header and sidebar
+render_header_and_sidebar([], ['check_admin' => true], 'API Extra', 'Configure', 'Extras');
 
 /*********************
  * FUNCTION: DISPLAY *
@@ -81,6 +83,6 @@ function display()
 	</script>
 </div>
 <?php
-// Render the footer of the page. Please don't put code after this part.
-render_footer();
+	// Render the footer and sidebar
+	render_footer();
 ?>

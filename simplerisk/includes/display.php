@@ -292,7 +292,7 @@ function add_risk_details($template_group_id = "") {
             </div>
         ";
 
-        $active_fields = get_active_fields("risk", $template_group_id);
+        $active_fields = get_active_fields("risk", $template_group_id, 1);
 
         // Top panel
         echo "
@@ -500,7 +500,7 @@ function view_risk_details($id, $submission_date, $submitted_by, $subject, $refe
             $group = get_default_template_group("risk");
             $template_group_id = $group["id"];
         }
-        $active_fields = get_active_fields("risk", $template_group_id);
+        $active_fields = get_active_fields("risk", $template_group_id, 1);
 
         // Top panel
         echo "
@@ -648,7 +648,7 @@ function view_print_risk_details($id, $submission_date, $subject, $reference_id,
             $template_group_id = $group["id"];
         }
 
-        $active_fields = get_active_fields("risk", $template_group_id);
+        $active_fields = get_active_fields("risk", $template_group_id, 1);
         foreach($active_fields as $field) {
 
             // Check if this field is custom field and details
@@ -1161,7 +1161,7 @@ function edit_risk_details($id, $submission_date,$submitted_by, $subject, $refer
             $group = get_default_template_group("risk");
             $template_group_id = $group["id"];
         }
-        $active_fields = get_active_fields("risk", $template_group_id);
+        $active_fields = get_active_fields("risk", $template_group_id, 1);
 
         // Top panel
         echo "
@@ -1297,55 +1297,7 @@ function view_mitigation_details($risk_id, $mitigation_id, $mitigation_date, $pl
         ";
     }
 
-    // If customization extra is enabled
-    if(customization_extra()) {
-        // Include the extra
-        require_once(realpath(__DIR__ . '/../extras/customization/index.php'));
-        $template_group = get_custom_template_group_by_id($template_group_id);
-        if(!$template_group_id || !$template_group) {
-            $group = get_default_template_group("risk");
-            $template_group_id = $group["id"];
-        }
-        $active_fields = get_active_fields("risk", $template_group_id);
-
-        echo "
-        <div class='row'>
-        ";
-
-        // Left Panel
-        echo "
-            <div class='col-6 left-panel'>
-        ";
-                display_main_mitigation_fields_by_panel_view('left', $active_fields, $risk_id, $mitigation_date, $planning_strategy, $mitigation_effort, $mitigation_cost, $mitigation_owner, $mitigation_team, $current_solution, $security_requirements, $security_recommendations, $planning_date, $mitigation_percent, $mitigation_controls, $mitigation_id);
-        echo "
-                &nbsp;
-            </div>
-        ";
-
-        // Right Panel
-        echo "
-            <div class='col-6 right-panel'>
-        ";
-                display_main_mitigation_fields_by_panel_view('right', $active_fields, $risk_id, $mitigation_date, $planning_strategy, $mitigation_effort, $mitigation_cost, $mitigation_owner, $mitigation_team, $current_solution, $security_requirements, $security_recommendations, $planning_date, $mitigation_percent, $mitigation_controls, $mitigation_id);
-        echo "
-                &nbsp;
-            </div>
-        </div>
-        ";
-
-        // Bottom panel
-        echo "
-        <div class='row'>
-            <div class='col-12 bottom-panel'>
-        ";
-                display_main_mitigation_fields_by_panel_view('bottom', $active_fields, $risk_id, $mitigation_date, $planning_strategy, $mitigation_effort, $mitigation_cost, $mitigation_owner, $mitigation_team, $current_solution, $security_requirements, $security_recommendations, $planning_date, $mitigation_percent, $mitigation_controls, $mitigation_id);
-        echo "
-                &nbsp;
-            </div>
-        </div>
-        ";
-    } else {
-        echo "
+    echo "
         <div class='row'>
         ";
 
@@ -1404,7 +1356,6 @@ function view_mitigation_details($risk_id, $mitigation_id, $mitigation_date, $pl
             </div>
         </div>
         ";
-    }
 }
 
 /*******************************************
@@ -1425,148 +1376,7 @@ function view_print_mitigation_details($id, $mitigation_date, $planning_strategy
         <div class='mitigation-details-container card-body border mt-2'>
     ";
 
-    // If customization extra is enabled
-    if(customization_extra()) {
-
-        // Include the extra
-        require_once(realpath(__DIR__ . '/../extras/customization/index.php'));
-        
-        $custom_values = getCustomFieldValuesByRiskId($id);
-        
-        $template_group = get_custom_template_group_by_id($template_group_id);
-        if(!$template_group_id || !$template_group) {
-            $group = get_default_template_group("risk");
-            $template_group_id = $group["id"];
-        }
-
-        $active_fields = get_active_fields("risk", $template_group_id);
-        foreach($active_fields as $field) {
-
-            // Check if this field is custom field and details
-            if($field['tab_index'] == 2) {
-
-                if($field['is_basic'] == 1) {
-
-                    switch($field['name']) {
-
-                        case 'MitigationDate':
-                            echo "
-            <div class='d-flex align-items-center mb-2'>
-                <label class='mb-0' style='width: 200px; min-width: 200px;'>" . $escaper->escapeHtml($lang['MitigationDate']) . ":</label>
-                <p class='mb-0'>" . $escaper->escapeHtml($mitigation_date) . "</p>
-            </div>
-                            ";
-                            break;
-                        
-                        case 'MitigationPlanning':
-                            echo "
-            <div class='d-flex align-items-center mb-2'>
-                <label class='mb-0' style='width: 200px; min-width: 200px;'>" . $escaper->escapeHtml($lang['MitigationPlanning']) . ":</label>
-                <p class='mb-0'>" . $escaper->escapeHtml($planning_date) . "</p>
-            </div>
-                            ";
-                            break;
-                            
-                        case 'PlanningStrategy':
-                            echo "
-            <div class='d-flex align-items-center mb-2'>
-                <label class='mb-0' style='width: 200px; min-width: 200px;'>" . $escaper->escapeHtml($lang['PlanningStrategy']) . ":</label>
-                <p class='mb-0'>" . $escaper->escapeHtml(get_name_by_value("planning_strategy", $planning_strategy)) . "</p>
-            </div>
-                            ";
-                            break;
-                            
-                        case 'MitigationEffort':
-                            echo "
-            <div class='d-flex align-items-center mb-2'>
-                <label class='mb-0' style='width: 200px; min-width: 200px;'>" . $escaper->escapeHtml($lang['MitigationEffort']) . ":</label>
-                <p class='mb-0'>" . $escaper->escapeHtml(get_name_by_value("mitigation_effort", $mitigation_effort)) . "</p>
-            </div>
-                            ";
-                            break;
-                            
-                        case 'MitigationCost':
-                            echo "
-            <div class='d-flex align-items-center mb-2'>
-                <label class='mb-0' style='width: 200px; min-width: 200px;'>" . $escaper->escapeHtml($lang['MitigationCost']) . ":</label>
-                <p class='mb-0'>" . $escaper->escapeHtml(get_asset_value_by_id($mitigation_cost)) . "</p>
-            </div>
-                            ";
-                            break;
-                            
-                        case 'MitigationOwner':
-                            echo "
-            <div class='d-flex align-items-center mb-2'>
-                <label class='mb-0' style='width: 200px; min-width: 200px;'>" . $escaper->escapeHtml($lang['MitigationOwner']) . ":</label>
-                <p class='mb-0'>" . $escaper->escapeHtml(get_name_by_value("user", $mitigation_owner)) . "</p>
-            </div>
-                            ";
-                            break;
-                            
-                        case 'MitigationTeam':
-                            echo "
-            <div class='d-flex align-items-center mb-2'>
-                <label class='mb-0' style='width: 200px; min-width: 200px;'>" . $escaper->escapeHtml($lang['MitigationTeam']) . ":</label>
-                <p class='mb-0'>" . $escaper->escapeHtml(get_names_by_multi_values("team", $mitigation_team)) . "</p>
-            </div>
-                            ";
-                            break;
-                            
-                        case 'MitigationPercent':
-                            echo "
-            <div class='d-flex align-items-center mb-2'>
-                <label class='mb-0' style='width: 200px; min-width: 200px;'>" . $escaper->escapeHtml($lang['MitigationPercent']) . ":</label>
-                <p class='mb-0'>" . $escaper->escapeHtml($mitigation_percent) . "</p>
-            </div>
-                            ";
-                            break;
-                            
-                        case 'AcceptMitigation':
-                            $message = view_accepted_mitigations($id);
-                            if($message) {
-                                echo "
-            <div class='d-flex align-items-center mb-2'>
-                <label class='mb-0' style='width: 200px; min-width: 200px;'>" . $escaper->escapeHtml($lang['AcceptMitigation']) . ":</label>
-                <p class='mb-0'>" . $message . "</p>
-            </div>
-                                ";
-                            }
-                            break;
-                            
-                        case 'CurrentSolution':
-                            echo "
-            <div class='d-flex align-items-center mb-2'>
-                <label class='mb-0' style='width: 200px; min-width: 200px;'>" . $escaper->escapeHtml($lang['CurrentSolution']) . ":</label>
-                <p class='mb-0'>" . $escaper->escapeHtml($current_solution) . "</p>
-            </div>
-                            ";
-                            break;
-                            
-                        case 'SecurityRequirements':
-                            echo "
-            <div class='d-flex align-items-center mb-2'>
-                <label class='mb-0' style='width: 200px; min-width: 200px;'>" . $escaper->escapeHtml($lang['SecurityRequirements']) . ":</label>
-                <p class='mb-0'>" . $escaper->escapeHtml($security_requirements) . "</p>
-            </div>
-                            ";
-                            break;
-                            
-                        case 'SecurityRecommendations':
-                            echo "
-            <div class='d-flex align-items-center mb-2'>
-                <label class='mb-0' style='width: 200px; min-width: 200px;'>" . $escaper->escapeHtml($lang['SecurityRecommendations']) . ":</label>
-                <p class='mb-0'>" . $escaper->escapeHtml($security_recommendations) . "</p>
-            </div>
-                            ";
-                            break;
-                    }
-                } else {
-                   display_custom_field_print($field, $custom_values);
-                }
-            }
-        }
-    } else {
-        echo "
+    echo "
             <div class='d-flex align-items-center mb-2'>
                 <label class='mb-0' style='width: 200px; min-width: 200px;'>" . $escaper->escapeHtml($lang['MitigationDate']) . ":</label>
                 <p class='mb-0'>" . $escaper->escapeHtml($mitigation_date) . "</p>
@@ -1608,7 +1418,6 @@ function view_print_mitigation_details($id, $mitigation_date, $planning_strategy
                 <p class='mb-0'>" . $escaper->escapeHtml($security_recommendations) . "</p>
             </div>
         ";
-    }
     echo "
         </div>
     ";
@@ -1785,50 +1594,7 @@ function edit_mitigation_details($risk_id, $mitigation_id, $mitigation_date, $pl
         </div>
     ";
 
-    // If customization extra is enabled
-    if(customization_extra())
-    {
-        // Include the extra
-        require_once(realpath(__DIR__ . '/../extras/customization/index.php'));
-        $template_group = get_custom_template_group_by_id($template_group_id);
-        if(!$template_group_id || !$template_group) {
-            $group = get_default_template_group("risk");
-            $template_group_id = $group["id"];
-        }
-        $active_fields = get_active_fields("risk", $template_group_id);
-
-        echo "
-        <div class='row'>
-        ";
-        // Left Panel
-        echo "
-            <div class='col-6 left-panel'>
-        ";
-                display_main_mitigation_fields_by_panel_edit('left', $active_fields, $risk_id, $mitigation_date, $planning_strategy, $mitigation_effort, $mitigation_cost, $mitigation_owner, $mitigation_team,  $current_solution, $security_requirements, $security_recommendations, $planning_date, $mitigation_percent, $mitigation_controls, $mitigation_id);
-        echo "
-            </div>
-        ";
-        // Right Panel
-        echo "
-            <div class='col-6 right-panel'>
-        ";
-                display_main_mitigation_fields_by_panel_edit('right', $active_fields, $risk_id, $mitigation_date, $planning_strategy, $mitigation_effort, $mitigation_cost, $mitigation_owner, $mitigation_team,  $current_solution, $security_requirements, $security_recommendations, $planning_date, $mitigation_percent, $mitigation_controls, $mitigation_id);
-        echo "
-            </div>
-        </div>
-        ";
-        // Bottom panel
-        echo "
-        <div class='row'>
-            <div class='col-12 bottom-panel'>
-        ";
-                display_main_mitigation_fields_by_panel_edit('bottom', $active_fields, $risk_id, $mitigation_date, $planning_strategy, $mitigation_effort, $mitigation_cost, $mitigation_owner, $mitigation_team,  $current_solution, $security_requirements, $security_recommendations, $planning_date, $mitigation_percent, $mitigation_controls, $mitigation_id);
-        echo "
-            </div>
-        </div>
-        ";
-    } else {
-        echo "
+    echo "
         <div class='row'>
             <div class='col-6 left-panel'>
                 <input type='hidden' name='tab_type' value='1' />
@@ -1877,7 +1643,6 @@ function edit_mitigation_details($risk_id, $mitigation_id, $mitigation_date, $pl
             </div>
         </div>
         ";
-    }
 }
 
 /********************************************************************************************************************************
@@ -1974,7 +1739,7 @@ function print_mitigation_controls_table($control_ids, $mitigation_id, $flag="vi
                     </h2>
                     <div id='{$tableID}-accordion-body' class='accordion-collapse'>
                         <div class='accordion-body'>
-                            <table id='{$tableID}' width='100%'>
+                            <table id='{$tableID}' width='100%' class='mitigation-controls-datatable' data-flag='{$escaper->escapeHtml($flag)}' data-mitigation-id='{$escaper->escapeHtml($mitigation_id)}'>
                                 <thead style='display:none;'>
                                     <tr>
                                         <th>&nbsp;</th>
@@ -1989,39 +1754,6 @@ function print_mitigation_controls_table($control_ids, $mitigation_id, $flag="vi
                 </div>
             </div>    
         </div>
-        <script>
-            $(document).ready(function(){
-                var mitigationControlDatatable = $('#{$tableID}').DataTable({
-                    scrollX: true,
-                    bFilter: false,
-                    processing: true,
-                    serverSide: true,
-                    bSort: true,
-                    ajax: {
-                        url: BASE_URL + '/api/v2/datatable/mitigation_controls',
-                        type: 'POST',
-                        data: function(d){
-                            var form = $('#{$tableID}').parents('form');
-                            d.flag = '{$flag}';
-                            d.mitigation_id = '{$mitigation_id}';
-                            if($('.mitigation_controls', form).length){
-                                d.control_ids = $('.mitigation_controls', form).val().join(',');
-                            }
-                            else{
-                                d.control_ids = $('.mitigation_control_ids', form).val();
-                            }
-                        },
-                        complete: function(response){
-                            if(Number(response.responseJSON.recordsTotal) > 0){
-                                $('#{$tableID}').parents('.mitigation-controls-table-container').removeClass('hide');
-                            }else{
-                                $('#{$tableID}').parents('.mitigation-controls-table-container').addClass('hide');
-                            }
-                        }
-                    }
-                });
-            });
-        </script>
     ";
 }
 
@@ -2100,56 +1832,6 @@ function view_review_details($id, $review_id, $review_date, $reviewer, $review, 
             <h4 class='m-b-25'>" . $escaper->escapeHtml($lang['LastReview']) . "</h4>
     ";
 
-    // If customization extra is enabled
-    if(customization_extra()) {
-
-        // Include the extra
-        require_once(realpath(__DIR__ . '/../extras/customization/index.php'));
-
-        $template_group = get_custom_template_group_by_id($template_group_id);
-        if(!$template_group_id || !$template_group) {
-            $group = get_default_template_group("risk");
-            $template_group_id = $group["id"];
-        }
-
-        $active_fields = get_active_fields("risk", $template_group_id);
-
-        echo "
-            <div class='row'>
-        ";
-
-        // Left Panel
-        echo "
-                <div class='col-6 left-panel'>
-        ";
-                    display_main_review_fields_by_panel_view('left', $active_fields, $id, $review_id, $review_date, $reviewer, $review, $next_step, $next_review, $comment);
-        echo "
-                </div>
-        ";
-
-        // Right Panel
-        echo "
-                <div class='col-6 right-panel'>
-        ";
-                    display_main_review_fields_by_panel_view('right', $active_fields, $id, $review_id, $review_date, $reviewer, $review, $next_step, $next_review, $comment);
-        echo "
-                </div>
-            </div>
-        ";
-
-        // Bottom panel
-        echo "
-            <div class='row'>
-                <div class='col-12 bottom-panel'>
-        ";
-                    display_main_review_fields_by_panel_view('bottom', $active_fields, $id, $review_id, $review_date, $reviewer, $review, $next_step, $next_review, $comment);
-        echo "
-                </div>
-            </div>
-        ";
-
-    } else {
-
         echo "
             <div class='row'>
                 <div class='col-6 left-panel'>
@@ -2169,7 +1851,6 @@ function view_review_details($id, $review_id, $review_date, $reviewer, $review, 
                 </div>
             </div>
         ";
-    }
 
     echo "
         </div>
@@ -2198,91 +1879,7 @@ function view_print_review_details($id, $review_id, $review_date, $reviewer, $re
         <div class='review-details-container card-body border mt-2'>
     ";
 
-    // If customization extra is enabled
-    if(customization_extra()) {
-
-        // Include the extra
-        require_once(realpath(__DIR__ . '/../extras/customization/index.php'));
-        
-        $custom_values = getCustomFieldValuesByRiskId($id);
-        
-        $template_group = get_custom_template_group_by_id($template_group_id);
-        if(!$template_group_id || !$template_group) {
-            $group = get_default_template_group("risk");
-            $template_group_id = $group["id"];
-        }
-
-        $active_fields = get_active_fields("risk", $template_group_id);
-        foreach($active_fields as $field) {
-
-            // Check if this field is custom field and review
-            if($field['tab_index'] == 3) {
-
-                if($field['is_basic'] == 1) {
-
-                    switch($field['name']) {
-
-                        case 'ReviewDate':
-                            echo "
-            <div class='d-flex align-items-center mb-2'>
-                <label class='mb-0' style='width: 200px; min-width: 200px;'>" . $escaper->escapeHtml($lang['ReviewDate']) . ":</label>
-                <p class='mb-0'>" . $escaper->escapeHtml($review_date) . "</p>
-            </div>
-                            ";
-                            break;
-                        
-                        case 'Reviewer':
-                            echo "
-            <div class='d-flex align-items-center mb-2'>
-                <label class='mb-0' style='width: 200px; min-width: 200px;'>" . $escaper->escapeHtml($lang['Reviewer']) . ":</label>
-                <p class='mb-0'>" . $escaper->escapeHtml(get_name_by_value("user", $reviewer)) . "</p>
-            </div>
-                            ";
-                            break;
-
-                        case 'Review':
-                            echo "
-            <div class='d-flex align-items-center mb-2'>
-                <label class='mb-0' style='width: 200px; min-width: 200px;'>" . $escaper->escapeHtml($lang['Review']) . ":</label>
-                <p class='mb-0'>" . $escaper->escapeHtml(get_name_by_value("review", $review)) . "</p>
-            </div>
-                            ";
-                            break;
-                            
-                        case 'NextStep':
-                            echo "
-            <div class='d-flex align-items-center mb-2'>
-                <label class='mb-0' style='width: 200px; min-width: 200px;'>" . $escaper->escapeHtml($lang['NextStep']) . ":</label>
-                <p class='mb-0'>" . $escaper->escapeHtml(get_name_by_value("next_step", $next_step)) . "</p>
-            </div>
-                            ";
-                            break;
-                            
-                        case 'NextReviewDate':
-                            echo "
-            <div class='d-flex align-items-center mb-2'>
-                <label class='mb-0' style='width: 200px; min-width: 200px;'>" . $escaper->escapeHtml($lang['NextReviewDate']) . ":</label>
-                <p class='mb-0'>" . $escaper->escapeHtml($next_review) . "</p>
-            </div>
-                            ";
-                            break;
-
-                        case 'Comment':
-                            echo "
-            <div class='d-flex align-items-center mb-2'>
-                <label class='mb-0' style='width: 200px; min-width: 200px;'>" . $escaper->escapeHtml($lang['Comments']) . ":</label>
-                <p class='mb-0'>" . $escaper->escapeHtml($comments) . "</p>
-            </div>
-                            ";
-                            break;
-                    }
-                } else {
-                    display_custom_field_print($field, $custom_values, $review_id);
-                }
-            }
-        }
-    } else {
-        echo "
+    echo "
             <div class='d-flex align-items-center mb-2'>
                 <label class='mb-0' style='width: 200px; min-width: 200px;'>" . $escaper->escapeHtml($lang['ReviewDate']) . ":</label>
                 <p class='mb-0'>" . $escaper->escapeHtml($review_date) . "</p>
@@ -2307,8 +1904,7 @@ function view_print_review_details($id, $review_id, $review_date, $reviewer, $re
                 <label class='mb-0' style='width: 200px; min-width: 200px;'>" . $escaper->escapeHtml($lang['Comments']) . ":</label>
                 <p class='mb-0'>" . $escaper->escapeHtml($comments) . "</p>
             </div>
-        ";        
-    }
+        ";
 
     echo "
         </div>
@@ -2339,52 +1935,6 @@ function edit_review_submission($id, $review_id, $review, $next_step, $next_revi
             </div>
     ";
 
-    // If customization extra is enabled
-    if(customization_extra()) {
-
-        // Include the extra
-        require_once(realpath(__DIR__ . '/../extras/customization/index.php'));
-        
-        $template_group = get_custom_template_group_by_id($template_group_id);
-        if(!$template_group_id || !$template_group) {
-            $group = get_default_template_group("risk");
-            $template_group_id = $group["id"];
-        }
-        $active_fields = get_active_fields("risk", $template_group_id);
-
-        echo "
-            <div class='row'>
-        ";
-        // Left Panel
-        echo "
-                <div class='col-6 left-panel'>
-        ";
-                    display_main_review_fields_by_panel_edit('left', $active_fields, $id, $review_id, $review, $next_step, $next_review, $comment, $default_next_review);
-        echo "
-                </div>
-        ";
-        // Right Panel
-        echo "
-                <div class='col-6 right-panel'>
-        ";
-                    display_main_review_fields_by_panel_edit('right', $active_fields, $id, $review_id, $review, $next_step, $next_review, $comment, $default_next_review);
-        echo "
-                </div>
-            </div>
-        ";
-        // Bottom panel
-        echo "
-            <div class='row'>
-                <div class='col-12 bottom-panel'>
-        ";
-                    display_main_review_fields_by_panel_edit('bottom', $active_fields, $id, $review_id, $review, $next_step, $next_review, $comment, $default_next_review);
-        echo "
-                </div>
-            </div>
-        ";
-
-    } else {
-
         echo "
             <div class='row-fluid'>
                 <div class='span5 left-panel'>
@@ -2408,8 +1958,6 @@ function edit_review_submission($id, $review_id, $review, $next_step, $next_revi
                 </div>
             </div>
         ";
-    
-    }
 
     echo "
         </form>
@@ -6538,6 +6086,7 @@ function report_likelihood_impact() {
 
     // Get classic risks
     $risks = get_risks(10);
+    $risk_levels = get_risk_levels();
 
     // Create an empty datasets array
     $datasets = [];
@@ -6546,11 +6095,26 @@ function report_likelihood_impact() {
     $max_x = get_likelihoods_count();
     $max_y = get_impacts_count();
 
+    // Pre-index risks by likelihood and impact in one pass
+    $risk_grid = [];
+    foreach ($risks as $risk) {
+        $x = $risk['CLASSIC_likelihood'];
+        $y = $risk['CLASSIC_impact'];
+        if (!isset($risk_grid[$x][$y])) {
+            $risk_grid[$x][$y] = [];
+        }
+        $risk_grid[$x][$y][] = $risk;
+    }
+
     // For each x value from the max to zero
     for ($x=$max_x; $x>=0; $x--) {
 
         // For each y value from the max to zero
         for ($y=$max_y; $y>=0; $y--) {
+
+            if (empty($risk_grid[$x][$y])) {
+                continue;
+            }
 
             // Create the default values
             $risk_ids = [];
@@ -6559,30 +6123,25 @@ function report_likelihood_impact() {
             $inherent_risk = 0;
             $color = '';
 
-            // Search the $risks array for the likelihood and impact values
-            foreach ($risks as $risk) {
+            foreach ($risk_grid[$x][$y] as $risk) {
+                // Get the risk information
+                $risk_id = $risk['id'] + 1000;
+                $risk_ids[] = $risk_id;
+                $mitigation_percent = $risk['mitigation_percent'];
+                $count = count($risk_ids);
 
-                // If we have a matching likelihood and impact
-                if ($x == $risk['CLASSIC_likelihood'] && $y == $risk['CLASSIC_impact']) {
-                    // Get the risk information
-                    $risk_id = $risk['id'] + 1000;
-                    $risk_ids[] = $risk_id;
-                    $mitigation_percent = $risk['mitigation_percent'];
-                    $count = count($risk_ids);
+                // Get the inherent and residual risk scores
+                $residual_risk = round(($risk['calculated_risk'] - ($risk['calculated_risk'] * $mitigation_percent/100)), 2);
+                $inherent_risk = round($risk['calculated_risk'], 2);
 
-                    // Get the inherent and residual risk scores
-                    $residual_risk = round(($risk['calculated_risk'] - ($risk['calculated_risk'] * $mitigation_percent/100)), 2);
-                    $inherent_risk = round($risk['calculated_risk'], 2);
+                // Get the color of the calculated risk
+                $color = get_risk_color_from_levels($inherent_risk, $risk_levels);
 
-                    // Get the color of the calculated risk
-                    $color = get_risk_color($inherent_risk);
-
-                    // Get the risk subject to be displayed (json_encode in bubble chart handles escaping)
-                    $subject = $risk['subject'];
-                    $residual_risk = "{$escaper->escapeHtml($lang['ResidualRisk'])}: {$residual_risk}";
-                    $residual_risk = str_pad($residual_risk, 20);
-                    $risk_subjects[] = truncate_to("{$residual_risk}[{$risk_id}] {$subject}", 50);
-                }
+                // Get the risk subject to be displayed (json_encode in bubble chart handles escaping)
+                $subject = $risk['subject'];
+                $residual_risk = "{$escaper->escapeHtml($lang['ResidualRisk'])}: {$residual_risk}";
+                $residual_risk = str_pad($residual_risk, 20);
+                $risk_subjects[] = truncate_to("{$residual_risk}[{$risk_id}] {$subject}", 50);
             }
 
             // If we have at least one risk in the dataset

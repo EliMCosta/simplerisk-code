@@ -66,11 +66,6 @@ function autoloader(string $name)
         require_once realpath(__DIR__ . '/compliance.php');
     }
 
-    if (file_exists(realpath(__DIR__ . '/artificial_intelligence.php')))
-    {
-        require_once realpath(__DIR__ . '/artificial_intelligence.php');
-    }
-
     if (file_exists(realpath(__DIR__ . '/reporting.php')))
     {
         require_once realpath(__DIR__ . '/reporting.php');
@@ -108,7 +103,6 @@ $scan_directories = [
     realpath(__DIR__ . '/governance.php'),
     realpath(__DIR__ . '/risks.php'),
     realpath(__DIR__ . '/compliance.php'),
-    realpath(__DIR__ . '/artificial_intelligence.php'),
     realpath(__DIR__ . '/reporting.php'),
     realpath(__DIR__ . '/riskformula.php'),
     realpath(__DIR__ . '/documents.php'),
@@ -124,17 +118,6 @@ if (is_extra_installed("complianceforgescf"))
         // Add the SCF extra API documentation
         require_once realpath(__DIR__ . '/../../../extras/complianceforgescf/includes/api_documentation.php');
         $scan_directories[] = realpath(__DIR__ . '/../../../extras/complianceforgescf/includes/api_documentation.php');
-    }
-}
-
-// If the artificial intelligence extra is enabled
-if (artificial_intelligence_extra())
-{
-    if (file_exists(realpath(__DIR__ . '/../../../extras/artificial_intelligence/includes/api_documentation.php')))
-    {
-        // Add the artificial intelligence extra API documentation
-        require_once realpath(__DIR__ . '/../../../extras/artificial_intelligence/includes/api_documentation.php');
-        $scan_directories[] = realpath(__DIR__ . '/../../../extras/artificial_intelligence/includes/api_documentation.php');
     }
 }
 

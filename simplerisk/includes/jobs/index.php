@@ -5,7 +5,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 return [
-    'core_ai_context_update' => true,
     'core_control_update' => true,
     'core_countries_update' => true,
     'core_document_update' => true,

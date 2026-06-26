@@ -723,6 +723,93 @@ function get_control_to_assets($control_id)
     return $rows;
 }
 
+/*******************************************************
+ * FUNCTION: GET MAPPING ASSETS FOR MULTIPLE CONTROLS  *
+ *******************************************************/
+function get_control_to_assets_for_controls(array $control_ids)
+{
+    $control_ids = array_values(array_filter(array_map('intval', $control_ids)));
+    if (empty($control_ids)) {
+        return [];
+    }
+
+    $id_list = implode(',', $control_ids);
+    $assets_by_control = [];
+
+    $db = db_open();
+
+    $stmt = $db->prepare("
+        SELECT
+            c2a.control_id,
+            cm.value control_maturity,
+            cm.name control_maturity_name,
+            GROUP_CONCAT(DISTINCT assets.name) asset_name,
+            NULL AS asset_group_name
+        FROM control_to_assets c2a
+            LEFT JOIN control_maturity cm ON cm.value = c2a.control_maturity
+            LEFT JOIN assets ON assets.id = c2a.asset_id
+        WHERE c2a.control_id IN ({$id_list})
+        GROUP BY c2a.control_id, c2a.control_maturity
+    ");
+    $stmt->execute();
+    foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        $control_id = (int)$row['control_id'];
+        $assets_by_control[$control_id][] = $row;
+    }
+
+    $stmt = $db->prepare("
+        SELECT
+            c2ag.control_id,
+            cm.value control_maturity,
+            cm.name control_maturity_name,
+            NULL AS asset_name,
+            GROUP_CONCAT(DISTINCT ag.name) asset_group_name
+        FROM control_to_asset_groups c2ag
+            LEFT JOIN control_maturity cm ON cm.value = c2ag.control_maturity
+            LEFT JOIN asset_groups ag ON ag.id = c2ag.asset_group_id
+        WHERE c2ag.control_id IN ({$id_list})
+        GROUP BY c2ag.control_id, c2ag.control_maturity
+    ");
+    $stmt->execute();
+    foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        $control_id = (int)$row['control_id'];
+        $maturity = (int)$row['control_maturity'];
+        $merged = false;
+
+        if (!empty($assets_by_control[$control_id])) {
+            foreach ($assets_by_control[$control_id] as &$existing) {
+                if ((int)$existing['control_maturity'] === $maturity) {
+                    $existing['asset_group_name'] = $row['asset_group_name'];
+                    $merged = true;
+                    break;
+                }
+            }
+            unset($existing);
+        }
+
+        if (!$merged) {
+            $assets_by_control[$control_id][] = $row;
+        }
+    }
+
+    db_close($db);
+
+    foreach ($assets_by_control as &$rows) {
+        foreach ($rows as &$row) {
+            if (!empty($row['asset_name'])) {
+                $asset_name = explode(',', (string)$row['asset_name']);
+                $row['asset_name'] = implode(", ", array_map(function ($name) {
+                    return try_decrypt($name);
+                }, $asset_name));
+            }
+        }
+        unset($row);
+    }
+    unset($rows);
+
+    return $assets_by_control;
+}
+
 
 /**
  * Returns whether the asset has the exact same control mappings as the one provided

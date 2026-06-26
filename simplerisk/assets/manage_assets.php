@@ -9,13 +9,6 @@
 
     // Include required functions file
     require_once(realpath(__DIR__ . '/../includes/assets.php'));
-
-    $control_options = array_map(function($control) {
-        return array(
-            'value' => $control['id'],
-            'name' => $control['short_name'],
-        );
-    }, get_framework_controls_by_filter("all", "all", "all", "all", "all", "all", "all", "all", "", "all"));
 ?>
 <div class="row my-2">
     <div class="col-12">
@@ -107,7 +100,7 @@
     <table>
         <tr>
             <td><?php create_dropdown("control_maturity", rename: "control_maturity[]", blank: false, customHtml: "required"); ?></td>
-            <td><?php create_multiple_dropdown("control_id", customHtml: "required", blankText: $lang['NoneSelected'], blankValue: 0, options: $control_options, additionalClasses: 'edit_input'); ?></td>
+            <td><?php create_multiple_dropdown("framework_controls", rename: "control_id", customHtml: "required", blankText: $lang['NoneSelected'], blankValue: 0, additionalClasses: 'edit_input'); ?></td>
             <td class="text-center">
                 <input type='text' name='mapped_controls[]' style='display: none'/>
                 <a href="javascript:void(0);" class="control-block--delete-mapping" title="<?= $escaper->escapeHtml($lang["Delete"]);?>"><i class="fa fa-trash"></i></a>

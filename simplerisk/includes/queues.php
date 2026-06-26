@@ -13,7 +13,7 @@ require_once(realpath(__DIR__ . '/functions.php'));
  * PRIORITY                                                  *
  * 100 = Do Immediately (Ex: send_email)                     *
  * 75 = Important, but can wait (Ex: ai_document_install)    *
- * 50 = Wait until spare cycles (Ex: core_ai_context_update) *
+ * 50 = Wait until spare cycles *
  * 25 = Not a high priority (Ex: core_countries_update)      *
  * 0 = Lowest possible priority (No Examples)                *
  *************************************************************/
@@ -98,13 +98,6 @@ function load_all_jobs(): array
     $coreDir = realpath(__DIR__ . '/jobs');
     if (is_dir($coreDir)) {
         $load_jobs_from_dir($coreDir, 'Core');
-    }
-
-    // --- Load AI Extra Jobs ---
-    $aiDir = realpath(__DIR__ . '/../extras/artificial_intelligence/jobs');
-    if (is_dir($aiDir)) {
-        require_once(realpath(__DIR__ . '/../extras/artificial_intelligence/index.php'));
-        $load_jobs_from_dir($aiDir, 'AI Extra');
     }
 
     // --- Load SCF Extra Jobs ---

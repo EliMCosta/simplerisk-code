@@ -54,7 +54,6 @@ global $available_extras;
 $available_extras = array(
     'advanced_search',
     'api',
-    'artificial_intelligence',
     'assessments',
     'authentication',
     'complianceforgescf',
@@ -6186,29 +6185,13 @@ function calculate_maximum_risk_score() {
  ****************************/
 function get_risk_color($risk)
 {
-    // Open the database connection
-    $db = db_open();
+    static $risk_levels = null;
 
-    // Get the risk levels
-    $stmt = $db->prepare("SELECT * FROM `risk_levels` WHERE value<=:value ORDER BY value DESC LIMIT 1");
-    $stmt->bindParam(":value", $risk, PDO::PARAM_STR, 4);
-    $stmt->execute();
-
-    // Store the list in the array
-    $array = $stmt->fetch();
-
-    // Close the database connection
-    db_close($db);
-
-    // Find the color
-    if(!$array){
-        $color = "white";
-    }else{
-        $color = $array['color'];
+    if ($risk_levels === null) {
+        $risk_levels = get_risk_levels();
     }
 
-
-    return $color;
+    return get_risk_color_from_levels($risk, $risk_levels);
 }
 
 /****************************
@@ -6245,54 +6228,13 @@ function get_risk_color_from_levels($risk, $levels)
  *********************************/
 function get_risk_level_name($risk)
 {
-    global $lang;
+    static $risk_levels = null;
 
-    $key = "risk_level_name".$risk;
-    
-    if(!isset($GLOBALS[$key]))
-    {
-        // If the risk is not null
-        if ($risk != "")
-        {
-            // Open the database connection
-            $db = db_open();
-
-            // Get the risk levels
-            $stmt = $db->prepare("SELECT name, display_name FROM `risk_levels` WHERE value<=:risk ORDER BY value DESC LIMIT 1");
-            $stmt->bindParam(":risk", $risk, PDO::PARAM_STR);
-            $stmt->execute();
-
-            // Store the list in the array
-            $array = $stmt->fetch(PDO::FETCH_ASSOC);
-
-            // Close the database connection
-            db_close($db);
-
-	    // If the returned array is not empty
-	    if (!empty($array))
-	    {
-            	// If the risk level display name is in High, Medium, or Low
-            	if ($array['display_name'] != "")
-            	{
-            	    $GLOBALS[$key] = $array['display_name'];
-            	}
-            	// If the risk level name is in High, Medium, or Low
-            	elseif($array['name'] != "")
-            	{
-            	    $GLOBALS[$key] = $array['name'];
-            	}
-            	// Otherwise the risk is Insignificant
-            	else $GLOBALS[$key] = "Insignificant";
-	    }
-	    else $GLOBALS[$key] = "Insignificant";
-        }
-        else
-        {
-            $GLOBALS[$key] = "";
-        }
+    if ($risk_levels === null) {
+        $risk_levels = get_risk_levels();
     }
 
-    return $GLOBALS[$key];
+    return get_risk_level_name_from_levels($risk, $risk_levels);
 }
 /****************************
  * FUNCTION: GET RISK LEVEL NAME BY PRE-DEFINED ARRAY*
@@ -7935,10 +7877,10 @@ function add_user($type, $user, $email, $name, $salt, $hash, $teams, $role_id, $
     require_once(realpath(__DIR__ . '/reports_catalog.php'));
     seed_default_favorite_reports((int)$user_id, $db);
 
-    // Same for the Settings Hub favorites — Preferences, Health Check, and
-    // Register & Upgrade are the high-traffic admin destinations and also
-    // the JS fallback set on API failure, so seeding them as defaults
-    // aligns the steady-state and recovery-state experiences.
+    // Same for the Settings Hub favorites — Preferences and Health Check
+    // are the high-traffic admin destinations and also the JS fallback set
+    // on API failure, so seeding them as defaults aligns the steady-state
+    // and recovery-state experiences.
     require_once(realpath(__DIR__ . '/settings_catalog.php'));
     seed_default_favorite_settings((int)$user_id, $db);
 
@@ -8334,11 +8276,8 @@ function submit_risk($status, $subject, $reference_id, $regulation, $control_num
     {
         // Include the extra
         require_once(realpath(__DIR__ . '/../extras/customization/index.php'));
-        if(!$template_group_id){
-            $group = get_default_template_group("risk");
-            $template_group_id = $group["id"];
-
-        }
+        $group = get_default_template_group("risk");
+        $template_group_id = $group ? $group["id"] : "";
     }
     // In the database `submitted_by` is defaulted to 1 as that's the id of the pre-created Admin user, so it's defaulted to 1 here as well
     $submitted_by || ($submitted_by = ($_SESSION['uid'] ?? null)) || ($submitted_by = 1);
@@ -8471,14 +8410,6 @@ function submit_risk($status, $subject, $reference_id, $regulation, $control_num
 
     $message = "A new risk ID \"" . $risk_id . "\" was submitted by username \"" . $escaper->escapeHtml($username) . "\". \n".$inserted_string;
     write_log($risk_id, $submitted_by, $message);
-
-    // Queue FAIR risk analysis (no-op if artificial intelligence extra is disabled)
-    call_extra_function(
-        'artificial_intelligence_extra',
-        __DIR__ . '/../extras/artificial_intelligence/index.php',
-        'queue_ai_risk_analysis',
-        [$last_insert_id + 1000, $db]
-    );
 
     // Close the database connection
     db_close($db);
@@ -9869,14 +9800,6 @@ function submit_mitigation($risk_id, $status, $post, $submitted_by_id=false)
     $stmt->execute();
     $_wf_owner = (int)(($stmt->fetch(PDO::FETCH_ASSOC))['owner'] ?? 0);
 
-    // Re-queue FAIR risk analysis (no-op if artificial intelligence extra is disabled)
-    call_extra_function(
-        'artificial_intelligence_extra',
-        __DIR__ . '/../extras/artificial_intelligence/index.php',
-        'queue_ai_risk_analysis',
-        [$risk_id, $db]
-    );
-
     // Close the database connection
     db_close($db);
 
@@ -10102,14 +10025,6 @@ function submit_management_review($risk_id, $status, $review, $next_step, $revie
     $stmt->bindParam(':id', $id, PDO::PARAM_INT);
     $stmt->execute();
     $_wf_owner = (int)(($stmt->fetch(PDO::FETCH_ASSOC))['owner'] ?? 0);
-
-    // Re-queue FAIR risk analysis (no-op if artificial intelligence extra is disabled)
-    call_extra_function(
-        'artificial_intelligence_extra',
-        __DIR__ . '/../extras/artificial_intelligence/index.php',
-        'queue_ai_risk_analysis',
-        [$risk_id, $db]
-    );
 
     // Close the database connection
     db_close($db);
@@ -10383,14 +10298,6 @@ function update_risk($risk_id, $is_api = false)
         __DIR__ . '/../extras/notification/index.php',
         'notify_risk_update',
         [$id]
-    );
-
-    // Re-queue FAIR risk analysis (no-op if artificial intelligence extra is disabled)
-    call_extra_function(
-        'artificial_intelligence_extra',
-        __DIR__ . '/../extras/artificial_intelligence/index.php',
-        'queue_ai_risk_analysis',
-        [$risk_id, $db]
     );
 
     // Audit log
@@ -11056,13 +10963,18 @@ function get_risks_by_project_id($project_id)
 /***********************
  * FUNCTION: GET RISKS *
  ***********************/
-function get_risks($sort_order=0, $order_field=false, $order_dir=false)
+function get_risks($sort_order=0, $order_field=false, $order_dir=false, $offset=null, $limit=null)
 {
 
     // Open the database connection
     $db = db_open();
 
     $array = [];
+
+    $limit_clause = '';
+    if ($limit !== null && $limit !== -1) {
+        $limit_clause = ' LIMIT ' . max(0, (int)$offset) . ', ' . max(0, (int)$limit);
+    }
     
     // If sort_field is defined, set sort query
     if($order_field)
@@ -11166,19 +11078,20 @@ function get_risks($sort_order=0, $order_field=false, $order_dir=false)
                     ];
     
                     // TODO if sorting on a field isn't working then it should be considered to add above or add the whole table to the list in the below query 
-                    $stmt = $db->prepare("
-                        SELECT
-                        	DISTINCT `COLUMN_NAME` 
-                        FROM
-                            `INFORMATION_SCHEMA`.`COLUMNS` 
-                        WHERE
-                            `TABLE_SCHEMA` = '" . DB_DATABASE . "'
-                        	AND `TABLE_NAME` IN ('mitigations', 'risks', 'mgmt_reviews')
-                    ");
-                    $stmt->execute();
-    
-                    // Store the list in the array
-                    $dynamic_allowed_fields = $stmt->fetchAll(PDO::FETCH_COLUMN, 0);                
+                    static $dynamic_allowed_fields = null;
+                    if ($dynamic_allowed_fields === null) {
+                        $stmt = $db->prepare("
+                            SELECT
+                                DISTINCT `COLUMN_NAME` 
+                            FROM
+                                `INFORMATION_SCHEMA`.`COLUMNS` 
+                            WHERE
+                                `TABLE_SCHEMA` = '" . DB_DATABASE . "'
+                                AND `TABLE_NAME` IN ('mitigations', 'risks', 'mgmt_reviews')
+                        ");
+                        $stmt->execute();
+                        $dynamic_allowed_fields = $stmt->fetchAll(PDO::FETCH_COLUMN, 0);
+                    }
                     $allowed_fields = array_values(array_unique(array_merge($static_allowed_fields, $dynamic_allowed_fields)));
                     
                     if (in_array($order_field, $allowed_fields)) {
@@ -11221,7 +11134,7 @@ function get_risks($sort_order=0, $order_field=false, $order_dir=false)
                 WHERE
                     b.status != \"Closed\"
                 GROUP BY b.id
-                {$sort_query}
+                {$sort_query}{$limit_clause}
             ");
         }
         else
@@ -11254,7 +11167,7 @@ function get_risks($sort_order=0, $order_field=false, $order_dir=false)
                 WHERE
                     b.status != \"Closed\"  " . $separation_query . "
                 GROUP BY b.id
-                {$sort_query}
+                {$sort_query}{$limit_clause}
             ");
         }
 
@@ -11415,7 +11328,7 @@ function get_risks($sort_order=0, $order_field=false, $order_dir=false)
                 WHERE
                     b.mitigation_id = 0 and b.status != \"Closed\"
                 GROUP BY b.id
-                {$sort_query}
+                {$sort_query}{$limit_clause}
                 ;
             ");
         }
@@ -11565,7 +11478,7 @@ function get_risks($sort_order=0, $order_field=false, $order_dir=false)
                 WHERE
                     b.mitigation_id = 0 and b.status != \"Closed\"  " . $separation_query . "
                 GROUP BY b.id
-                {$sort_query}
+                {$sort_query}{$limit_clause}
                 ;
             ");
         }
@@ -11728,7 +11641,7 @@ function get_risks($sort_order=0, $order_field=false, $order_dir=false)
                     b.mgmt_review = 0 and b.status != \"Closed\"
                 GROUP BY
                     b.id
-                {$sort_query}
+                {$sort_query}{$limit_clause}
                 ;
             ");
         }
@@ -11881,7 +11794,7 @@ function get_risks($sort_order=0, $order_field=false, $order_dir=false)
                     b.mgmt_review = 0 and b.status != \"Closed\"  {$separation_query}
                 GROUP BY
                     b.id
-                {$sort_query}
+                {$sort_query}{$limit_clause}
                 ;
             ");
         }
@@ -12050,7 +11963,7 @@ function get_risks($sort_order=0, $order_field=false, $order_dir=false)
 
             WHERE b.status != \"Closed\" {$separation_query}
             GROUP BY b.id
-            {$sort_query}
+            {$sort_query}{$limit_clause}
         ;");
 
         $stmt->execute();
@@ -12087,6 +12000,7 @@ function get_risks($sort_order=0, $order_field=false, $order_dir=false)
                 GROUP BY b.id
                 ORDER BY
                     calculated_risk DESC
+                {$limit_clause}
             ");
 
 //            $stmt = $db->prepare("SELECT a.calculated_risk, b.* FROM risk_scoring a LEFT JOIN risks b ON a.id = b.id WHERE status = \"Closed\" ORDER BY calculated_risk DESC");
@@ -12157,7 +12071,7 @@ function get_risks($sort_order=0, $order_field=false, $order_dir=false)
                 LEFT JOIN threat_catalog on tcm.threat_catalog_id=threat_catalog.id
             WHERE b.status != \"Closed\"
             GROUP BY b.id
-            ORDER BY calculated_risk DESC");
+            ORDER BY calculated_risk DESC{$limit_clause}");
         }
         else
         {
@@ -12185,7 +12099,7 @@ function get_risks($sort_order=0, $order_field=false, $order_dir=false)
                 LEFT JOIN threat_catalog on tcm.threat_catalog_id=threat_catalog.id
             WHERE b.status != \"Closed\" " . $separation_query . "
             GROUP BY b.id
-            ORDER BY calculated_risk DESC");
+            ORDER BY calculated_risk DESC{$limit_clause}");
         }
 
         $stmt->execute();
@@ -12217,7 +12131,7 @@ function get_risks($sort_order=0, $order_field=false, $order_dir=false)
                 LEFT JOIN threat_catalog on tcm.threat_catalog_id=threat_catalog.id
             WHERE b.status != \"Closed\"
             GROUP BY b.id
-            ORDER BY calculated_risk DESC");
+            ORDER BY calculated_risk DESC{$limit_clause}");
         }
         else
         {
@@ -12246,7 +12160,7 @@ function get_risks($sort_order=0, $order_field=false, $order_dir=false)
                 LEFT JOIN threat_catalog on tcm.threat_catalog_id=threat_catalog.id
             WHERE b.status != \"Closed\" " . $separation_query . "
             GROUP BY b.id
-            ORDER BY calculated_risk DESC");
+            ORDER BY calculated_risk DESC{$limit_clause}");
         }
 
         $stmt->execute();
@@ -12371,6 +12285,7 @@ function get_risks($sort_order=0, $order_field=false, $order_dir=false)
                 GROUP BY b.id
                 ORDER BY
                     calculated_risk DESC
+                {$limit_clause}
             ");
         }
 
@@ -12648,7 +12563,7 @@ function get_risks($sort_order=0, $order_field=false, $order_dir=false)
                     LEFT JOIN threat_catalog on tcm.threat_catalog_id=threat_catalog.id
                     WHERE b.status != \"Closed\" AND c.scoring_method = 3 " . $separation_query . " 
                     GROUP BY b.id 
-                    ORDER BY calculated_risk DESC");
+                    ORDER BY calculated_risk DESC{$limit_clause}");
             }
 
             $stmt->execute();
@@ -12698,7 +12613,7 @@ function get_risks($sort_order=0, $order_field=false, $order_dir=false)
                     LEFT JOIN threat_catalog on tcm.threat_catalog_id=threat_catalog.id
                     WHERE b.status != \"Closed\" AND c.scoring_method = 4 " . $separation_query . "
                     GROUP BY b.id
-                    ORDER BY calculated_risk DESC");
+                    ORDER BY calculated_risk DESC{$limit_clause}");
             }
 
             $stmt->execute();
@@ -12902,7 +12817,7 @@ function get_risks($sort_order=0, $order_field=false, $order_dir=false)
                     b.status != \"Closed\" AND a.calculated_risk >= :high
                 GROUP BY
                     b.id
-                ORDER BY calculated_risk DESC");
+                ORDER BY calculated_risk DESC{$limit_clause}");
         }
         else
         {
@@ -12998,6 +12913,48 @@ function get_risks($sort_order=0, $order_field=false, $order_dir=false)
     return $array;
 }
 
+/****************************************
+ * FUNCTION: GET RISKS COUNT FOR TABLE  *
+ ****************************************/
+function get_risks_count_for_sort_order($sort_order)
+{
+    $db = db_open();
+    $separation_query = '';
+
+    if (team_separation_extra()) {
+        require_once(realpath(__DIR__ . '/../extras/separation/index.php'));
+        $separation_query = get_user_teams_query("b", false, true);
+    }
+
+    switch ((int)$sort_order) {
+        case 1:
+            $sql = "SELECT COUNT(DISTINCT b.id) FROM risks b LEFT JOIN risk_to_team rtt ON b.id = rtt.risk_id LEFT JOIN risk_to_additional_stakeholder rtas ON b.id = rtas.risk_id WHERE b.mitigation_id = 0 AND b.status != 'Closed' {$separation_query}";
+            break;
+        case 2:
+            $sql = "SELECT COUNT(DISTINCT b.id) FROM risks b LEFT JOIN risk_to_team rtt ON b.id = rtt.risk_id LEFT JOIN risk_to_additional_stakeholder rtas ON b.id = rtas.risk_id WHERE b.mgmt_review = 0 AND b.status != 'Closed' {$separation_query}";
+            break;
+        case 4:
+            $sql = "SELECT COUNT(DISTINCT b.id) FROM risks b LEFT JOIN risk_to_team rtt ON b.id = rtt.risk_id LEFT JOIN risk_to_additional_stakeholder rtas ON b.id = rtas.risk_id WHERE b.status = 'Closed' {$separation_query}";
+            break;
+        case 5:
+            $sql = "SELECT COUNT(DISTINCT b.id) FROM risks b LEFT JOIN risk_to_team rtt ON b.id = rtt.risk_id LEFT JOIN risk_to_additional_stakeholder rtas ON b.id = rtas.risk_id RIGHT JOIN (SELECT c1.risk_id FROM mgmt_reviews c1 RIGHT JOIN (SELECT risk_id, MAX(submission_date) AS date FROM mgmt_reviews GROUP BY risk_id) AS c2 ON c1.risk_id = c2.risk_id AND c1.submission_date = c2.date WHERE next_step = 2) AS c ON b.id = c.risk_id WHERE b.status != 'Closed' {$separation_query}";
+            break;
+        case 6:
+            $sql = "SELECT COUNT(DISTINCT b.id) FROM risks b LEFT JOIN risk_to_team rtt ON b.id = rtt.risk_id LEFT JOIN risk_to_additional_stakeholder rtas ON b.id = rtas.risk_id RIGHT JOIN (SELECT c1.risk_id FROM mgmt_reviews c1 RIGHT JOIN (SELECT risk_id, MAX(submission_date) AS date FROM mgmt_reviews GROUP BY risk_id) AS c2 ON c1.risk_id = c2.risk_id AND c1.submission_date = c2.date WHERE next_step = 1) AS c ON b.id = c.risk_id WHERE b.status != 'Closed' {$separation_query}";
+            break;
+        case 7:
+            $sql = "SELECT COUNT(DISTINCT b.id) FROM risks b LEFT JOIN risk_to_team rtt ON b.id = rtt.risk_id LEFT JOIN risk_to_additional_stakeholder rtas ON b.id = rtas.risk_id RIGHT JOIN (SELECT c1.risk_id FROM mgmt_reviews c1 RIGHT JOIN (SELECT risk_id, MAX(submission_date) AS date FROM mgmt_reviews GROUP BY risk_id) AS c2 ON c1.risk_id = c2.risk_id AND c1.submission_date = c2.date WHERE next_step = 3) AS c ON b.id = c.risk_id WHERE b.status != 'Closed' {$separation_query}";
+            break;
+        default:
+            $sql = "SELECT COUNT(DISTINCT b.id) FROM risks b LEFT JOIN risk_to_team rtt ON b.id = rtt.risk_id LEFT JOIN risk_to_additional_stakeholder rtas ON b.id = rtas.risk_id WHERE b.status != 'Closed' {$separation_query}";
+            break;
+    }
+
+    $count = (int)$db->query($sql)->fetchColumn();
+    db_close($db);
+    return $count;
+}
+
 /****************************
  * FUNCTION: GET RISK TABLE *
  ****************************/
@@ -13009,17 +12966,10 @@ function get_risk_table($sort_order=0, $activecol="")
     // Get risks
     // $count = get_risks_count($sort_order);
 
-    // Get the list of mitigations
-    $risks = get_risks($sort_order);
-    $count = count($risks);
-
     // number of rows to show per page
     $rowsperpage = 10;
 
-    // find out total pages
-    $totalpages = ceil($count / $rowsperpage);
-
-    // get the current page or set a default
+    // Get the current page or set a default
     if (isset($_GET['currentpage']) && is_numeric($_GET['currentpage'])) {
        // cast var as int
        $currentpage = (int) $_GET['currentpage'];
@@ -13028,26 +12978,43 @@ function get_risk_table($sort_order=0, $activecol="")
        $currentpage = 1;
     } // end if
 
-    // if current page is greater than total pages...
-    if ($currentpage > $totalpages) {
-       // set current page to last page
-       $currentpage = $totalpages;
-    } // end if
-    // if current page is less than first page...
-    if ($currentpage < 1) {
-       // set current page to first page
-       $currentpage = 1;
-    } // end if
-
-    // the offset of the list, based on current page
-    $offset = ($currentpage - 1) * $rowsperpage;
-
     $all_style = '';
-    if(isset($_GET['currentpage']) && $_GET['currentpage'] == 'all') {
+    $show_all = isset($_GET['currentpage']) && $_GET['currentpage'] == 'all';
+    if ($show_all) {
+        $risks = get_risks($sort_order);
+        $count = count($risks);
         $offset = 0;
         $rowsperpage = $count;
         $currentpage = -1;
         $all_style = 'class="active"';
+    } else {
+        $count = get_risks_count_for_sort_order($sort_order);
+        // find out total pages
+        $totalpages = max(1, (int)ceil($count / $rowsperpage));
+
+        // if current page is greater than total pages...
+        if ($currentpage > $totalpages) {
+           // set current page to last page
+           $currentpage = $totalpages;
+        } // end if
+        // if current page is less than first page...
+        if ($currentpage < 1) {
+           // set current page to first page
+           $currentpage = 1;
+        } // end if
+
+        // the offset of the list, based on current page
+        $offset = ($currentpage - 1) * $rowsperpage;
+        $risks = get_risks($sort_order, false, false, $offset, $rowsperpage);
+        $totalpages = max(1, (int)ceil($count / $rowsperpage));
+    }
+
+    if (!$show_all) {
+        if (!isset($totalpages)) {
+            $totalpages = max(1, (int)ceil($count / $rowsperpage));
+        }
+    } else {
+        $totalpages = 1;
     }
 
     echo "<table class=\"table table-bordered table-striped table-condensed sortable\">\n";
@@ -13073,11 +13040,19 @@ function get_risk_table($sort_order=0, $activecol="")
     $risk_levels = get_risk_levels();
     
     // For each risk
-    for ($i=$offset; $i<min($rowsperpage+$offset, $count); $i++)
-    {
-        // Get the risk
-        $risk = $risks[$i];
+    if ($show_all) {
+        $risk_rows = [];
+        for ($i=$offset; $i<min($rowsperpage+$offset, $count); $i++) {
+            $risk_rows[] = $risks[$i];
+        }
+    } else {
+        $risk_rows = $risks;
+    }
 
+    $next_review_date_uses = get_setting('next_review_date_uses');
+
+    foreach ($risk_rows as $risk)
+    {
         // Get the risk color
         $color = get_risk_color_from_levels($risk['calculated_risk'], $risk_levels);
 
@@ -13121,11 +13096,11 @@ function get_risk_table($sort_order=0, $activecol="")
             $mitigation = "";
             $management = "";
         }
-        $risk_level = get_risk_level_name($risk['calculated_risk']);
-        $residual_risk_level = get_risk_level_name($risk['residual_risk']);
+        $risk_level = get_risk_level_name_from_levels($risk['calculated_risk'], $risk_levels);
+        $residual_risk_level = get_risk_level_name_from_levels($risk['residual_risk'], $risk_levels);
 
         // If next_review_date_uses setting is Residual Risk.
-        if(get_setting('next_review_date_uses') == "ResidualRisk")
+        if($next_review_date_uses == "ResidualRisk")
         {
             $next_review = next_review($residual_risk_level, $risk['id'], $risk['next_review'], false, $review_levels);
         }
@@ -13886,6 +13861,10 @@ function get_projects_and_risks_table()
     // Get projects
     $projects = get_projects();
 
+    // Get risks marked as consider for projects (once, not per project)
+    $risks = get_risks(5);
+    $risk_levels = get_risk_levels();
+
     // For each project
     foreach ($projects as $project)
     {
@@ -13910,16 +13889,13 @@ function get_projects_and_risks_table()
             echo "</thead>\n";
             echo "<tbody>\n";
 
-            // Get risks marked as consider for projects
-            $risks = get_risks(5);
-
             // For each risk
             foreach ($risks as $risk)
             {
                 $subject = $risk['subject'];
                 $risk_id = (int)$risk['id'];
                 $project_id = (int)$risk['project_id'];
-                $color = get_risk_color($risk['calculated_risk']);
+                $color = get_risk_color_from_levels($risk['calculated_risk'], $risk_levels);
 
                 // If the risk is assigned to that project id
                 if ($id == $project_id)
@@ -14834,6 +14810,58 @@ function get_names_by_multi_values($table, $values, $return_array=false, $implod
     }
 }
 
+/*************************************************
+ * FUNCTION: GET CATALOG NAME LOOKUP MAPS (cached) *
+ *************************************************/
+function get_catalog_name_lookup_maps()
+{
+    static $maps = null;
+
+    if ($maps !== null) {
+        return $maps;
+    }
+
+    global $tables_where_name_is_encrypted;
+    $maps = ['risk_catalog' => [], 'threat_catalog' => []];
+    $db = db_open();
+
+    foreach (['risk_catalog', 'threat_catalog'] as $table) {
+        $stmt = $db->query("SELECT id, name FROM `{$table}`");
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $name = $row['name'];
+            if (in_array($table, $tables_where_name_is_encrypted)) {
+                $name = try_decrypt($name);
+            }
+            $maps[$table][(int)$row['id']] = $name;
+        }
+    }
+
+    db_close($db);
+    return $maps;
+}
+
+/**************************************************
+ * FUNCTION: RESOLVE NAMES FROM PRELOADED CATALOG *
+ **************************************************/
+function resolve_names_by_multi_values($name_map, $values, $implode_separator=", ")
+{
+    if ($values === null || $values === "" || $values === []) {
+        return "";
+    }
+
+    $ids = is_array($values) ? $values : explode(",", (string)$values);
+    $names = [];
+
+    foreach ($ids as $id) {
+        $id = (int)trim($id);
+        if ($id && isset($name_map[$id])) {
+            $names[] = $name_map[$id];
+        }
+    }
+
+    return implode($implode_separator, $names);
+}
+
 /*****************************
  * FUNCTION: UPDATE LANGUAGE *
  *****************************/
@@ -14972,25 +15000,73 @@ function dayssince($date, $date2 = null)
  **********************************/
 function get_last_review($risk_id)
 {
-        // Open the database connection
-        $db = db_open();
+    $cache = &get_last_review_date_cache();
 
-    // Select the last submission date
+    if (array_key_exists($risk_id, $cache)) {
+        return $cache[$risk_id];
+    }
+
+    $db = db_open();
     $stmt = $db->prepare("SELECT submission_date FROM mgmt_reviews WHERE risk_id=:risk_id ORDER BY submission_date DESC LIMIT 1");
     $stmt->bindParam(":risk_id", $risk_id, PDO::PARAM_INT);
     $stmt->execute();
-    // Store the list in the array
     $array = $stmt->fetchAll();
-
-    // Close the database connection
     db_close($db);
 
-    // If the array is empty
-    if (empty($array))
-    {
-            return "";
+    $cache[$risk_id] = empty($array) ? "" : $array[0]['submission_date'];
+    return $cache[$risk_id];
+}
+
+/***********************************************
+ * FUNCTION: LAST REVIEW DATE REQUEST CACHE    *
+ ***********************************************/
+function &get_last_review_date_cache()
+{
+    static $cache = [];
+    return $cache;
+}
+
+/***********************************************
+ * FUNCTION: PRELOAD LAST REVIEW DATES BY IDS  *
+ ***********************************************/
+function preload_last_review_dates(array $risk_ids)
+{
+    $cache = &get_last_review_date_cache();
+
+    $risk_ids = array_values(array_filter(array_map('intval', $risk_ids)));
+    if (empty($risk_ids)) {
+        return;
     }
-    else return $array[0]['submission_date'];
+
+    $missing = [];
+    foreach ($risk_ids as $risk_id) {
+        if (!array_key_exists($risk_id, $cache)) {
+            $missing[$risk_id] = $risk_id;
+        }
+    }
+
+    if (empty($missing)) {
+        return;
+    }
+
+    $id_list = implode(',', $missing);
+    $db = db_open();
+    $stmt = $db->prepare("
+        SELECT risk_id, MAX(submission_date) AS submission_date
+        FROM mgmt_reviews
+        WHERE risk_id IN ({$id_list})
+        GROUP BY risk_id
+    ");
+    $stmt->execute();
+
+    foreach ($missing as $risk_id) {
+        $cache[$risk_id] = "";
+    }
+    foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        $cache[(int)$row['risk_id']] = $row['submission_date'];
+    }
+
+    db_close($db);
 }
 
 /**
@@ -15821,87 +15897,28 @@ function get_reviews($risk_id, $template_group_id="")
     // Close the database connection
     db_close($db);
 
-    $active_fields = [];
-
-    // If customization extra is enabled
-    if(customization_extra()) {
-
-        // Include the extra
-        require_once(realpath(__DIR__ . '/../extras/customization/index.php'));
-
-        if(!$template_group_id) {
-            $group = get_default_template_group("risk");
-            $template_group_id = $group["id"];
-        }
-
-        $active_fields = get_active_fields("risk", $template_group_id);
-        foreach($active_fields as $key => $field) {
-            if($field['name'] == 'NextReviewDate') {
-                unset($active_fields[$key]);
-            }
-        }
-    }
-
     foreach ($reviews as $review) {
 
         $review_date = date(get_default_datetime_format("g:i A T"), strtotime($review['submission_date']));
         $comment = try_decrypt($review['comments']);
 
-        // If customization extra is enabled
-        if(customization_extra()) {
-
-            echo "
-                <div class='row card-body my-2 border'>
-            ";
-            // Left Panel
-            echo "
-                    <div class='col-6 left-panel'>
-            ";
-                        display_main_review_fields_by_panel_view('left', $active_fields, $risk_id, $review['id'], $review_date, $review['reviewer'], $review['review'], $review['next_step'], "", $comment);
-            echo "
-                    </div>
-            ";
-            // Right Panel
-            echo "
-                    <div class='col-6 right-panel'>
-            ";
-                        display_main_review_fields_by_panel_view('right', $active_fields, $risk_id, $review['id'], $review_date, $review['reviewer'], $review['review'], $review['next_step'], "", $comment);
-            echo "
-                    </div>
-                </div>
-            ";
-            // Bottom panel
-            echo "
-                <div class='row'>
-                    <div class='col-12 bottom-panel'>
-            ";
-                        display_main_review_fields_by_panel_view('bottom', $active_fields, $risk_id, $review['id'], $review_date, $review['reviewer'], $review['review'], $review['next_step'], "", $comment);
-            echo "
-                    </div>
-                </div>
-            ";
-
-        } else {
-            
-            echo "
+        echo "
                 <div class='row card-body my-2 border'>
                     <div class='col-6 left-panel'>
-            ";
-                        display_review_date_view($review_date);
+        ";
+                    display_review_date_view($review_date);
 
-                        display_reviewer_view($review['reviewer']);
+                    display_reviewer_view($review['reviewer']);
 
-                        display_review_view($review['review']);
+                    display_review_view($review['review']);
 
-                        display_next_step_view($review['next_step'], $risk_id);
+                    display_next_step_view($review['next_step'], $risk_id);
 
-                        display_comments_view($comment);
-            echo "
+                    display_comments_view($comment);
+        echo "
                     </div>
                 </div>
-            ";
-            
-        }
+        ";
     }
 
     return true;
@@ -16407,33 +16424,6 @@ function notification_extra()
     else $GLOBALS['notification_extra'] = false;
 
     return $GLOBALS['notification_extra'];
-}
-
-/*******************************************
- * FUNCTION: ARTIFICIAL INTELLIGENCE EXTRA *
- *******************************************/
-function artificial_intelligence_extra()
-{
-    if(isset($GLOBALS['artificial_intelligence_extra'])){
-        return $GLOBALS['artificial_intelligence_extra'];
-    }
-
-    $setting = get_setting('extra_artificial_intelligence');
-
-    // If the setting is not empty
-    if (!empty($setting))
-    {
-        // If the setting is true or "true" or 1
-        if ($setting === true || $setting === "true" || $setting === 1 || $setting === "1")
-        {
-            // The extra is enabled
-            $GLOBALS['artificial_intelligence_extra'] = true;
-        }
-        else $GLOBALS['artificial_intelligence_extra'] = false;
-    }
-    else $GLOBALS['artificial_intelligence_extra'] = false;
-
-    return $GLOBALS['artificial_intelligence_extra'];
 }
 
 /*********************************
@@ -18192,11 +18182,46 @@ function get_default_landing_page()
     return "account/profile.php";
 }
 
+/****************************************
+ * FUNCTION: REGISTER AND UPGRADE GATE   *
+ ****************************************/
+/**
+ * Whether the Register & Upgrade feature is disabled for this install.
+ *
+ * Disabled by default in this build. When disabled, the Settings Hub hides
+ * the Register & Upgrade tile, the login flow no longer nags admins or
+ * redirects to admin/register.php, and direct access to admin/register.php
+ * bounces back to the Settings Hub.
+ *
+ * To re-enable (e.g. to register the instance or enter a subscription key),
+ * set the `register_and_upgrade_disabled` setting to 'false'.
+ */
+function register_and_upgrade_disabled(): bool
+{
+    return get_setting('register_and_upgrade_disabled') !== 'false';
+}
+
 /***********************************
  * FUNCTION: REGISTRATION REDIRECT *
  ***********************************/
 function registration_redirect()
 {
+    // If Register & Upgrade is fully disabled, never nag the admin or
+    // redirect to the register page — go straight to the requested URL (if
+    // any) or the user's default landing page.
+    if (register_and_upgrade_disabled())
+    {
+        if (isset($_SESSION['requested_url']))
+        {
+            $requested_url = $_SESSION['requested_url'];
+            unset($_SESSION['requested_url']);
+            header("Location: " . $requested_url);
+            exit(0);
+        }
+        header("Location: " . get_default_landing_page());
+        exit(0);
+    }
+
     // If the SimpleRisk instance is not registered
     if (get_setting('registration_registered') == 0)
     {
@@ -19443,9 +19468,6 @@ function ping_server()
             'api_installed' => core_is_installed("api"),
             'api_enabled' => api_extra(),
             'api_version' => core_extra_current_version("api"),
-            'artificial_intelligence_installed' => core_is_installed("artificial_intelligence"),
-            'artificial_intelligence_enabled' => artificial_intelligence_extra(),
-            'artificial_intelligence_version' => core_extra_current_version("artificial_intelligence"),
             'risk_assessment_installed' => core_is_installed("assessments"),
             'risk_assessment_enabled' => assessments_extra(),
             'risk_assessment_version' => core_extra_current_version("assessments"),
@@ -24218,6 +24240,31 @@ function get_mitigation_to_controls($mitigation_id,$control_id)
     return $frameworks;
 }
 
+/**************************************************
+ * FUNCTION: GET mitigation_to_controls (batch)   *
+ **************************************************/
+function get_mitigation_to_controls_batch($mitigation_id, array $control_ids)
+{
+    $control_ids = array_values(array_filter(array_map('intval', $control_ids)));
+    if (empty($control_ids)) {
+        return [];
+    }
+
+    $id_list = implode(',', $control_ids);
+    $db = db_open();
+    $stmt = $db->prepare("SELECT * FROM `mitigation_to_controls` WHERE mitigation_id = :mitigation_id AND control_id IN ({$id_list})");
+    $stmt->bindParam(":mitigation_id", $mitigation_id, PDO::PARAM_INT);
+    $stmt->execute();
+
+    $validations_by_control = [];
+    foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        $validations_by_control[(int)$row['control_id']] = $row;
+    }
+
+    db_close($db);
+    return $validations_by_control;
+}
+
 /*******************************
  * FUNCTION: GET RISK CATALOGS *
  *******************************/
@@ -26328,13 +26375,37 @@ function get_validation_files($mitigation_id, $control_id)
     $stmt->bindParam(":control_id", $control_id, PDO::PARAM_INT);
     $stmt->execute();
 
-    $stmt->execute();
     $files = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     // Close the database connection
     db_close($db);
 
     return $files;
+}
+
+/***********************************************
+ * FUNCTION: GET VALIDATION FILES (batch)      *
+ ***********************************************/
+function get_validation_files_batch($mitigation_id, array $control_ids)
+{
+    $control_ids = array_values(array_filter(array_map('intval', $control_ids)));
+    if (empty($control_ids)) {
+        return [];
+    }
+
+    $id_list = implode(',', $control_ids);
+    $db = db_open();
+    $stmt = $db->prepare("SELECT id, name, control_id FROM validation_files WHERE mitigation_id=:mitigation_id AND control_id IN ({$id_list})");
+    $stmt->bindParam(":mitigation_id", $mitigation_id, PDO::PARAM_INT);
+    $stmt->execute();
+
+    $files_by_control = [];
+    foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        $files_by_control[(int)$row['control_id']][] = $row;
+    }
+
+    db_close($db);
+    return $files_by_control;
 }
 
 /**********************************************************
@@ -27858,7 +27929,7 @@ function field_settings_get_localization($view, $grouped = true, $escaped = true
             }
         }
 
-        if ($customization) {
+        if ($customization && !empty($field_names_by_customization_field_names)) {
 
             // Get the active fields for only the required tab(if there's any set up)
             // @phan-suppress-next-line PhanTypePossiblyInvalidDimOffset -- customization_tab_index is optional; !empty() guards the access

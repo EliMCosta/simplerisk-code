@@ -23,13 +23,14 @@
  *
  * Preferences (the page that holds default values and behavioral toggles
  * such as alert timeout and risk-mapping requirements), Health Check, and
- * About are first-class catalog entries and are also the three default
- * favorites every user is seeded with (see default_favorite_settings_keys).
- * In addition, settings-hub.js renders a hardcoded fallback trio of those
+ * About are first-class catalog entries. Preferences and Health Check are
+ * also the two default favorites every user is seeded with (see
+ * default_favorite_settings_keys).
+ * In addition, settings-hub.js renders a hardcoded fallback pair of those
  * same tiles inside .hub__main when the catalog API fetch fails — so an
  * admin who has broken the API (e.g. by misconfiguring Base URL or the
- * Security page) still has a one-click path to the three pages they'd need
- * to recover, diagnose, and identify the version.
+ * Security page) still has a one-click path to the pages they'd need
+ * to recover and diagnose.
  */
 
 /********************************
@@ -93,7 +94,7 @@ function settings_catalog(): array
             'desc_key'    => 'RegisterAndUpgradeDesc',
             'path'        => 'admin/register.php',
             'tags'        => ['system'],
-            'visibility'  => ['mode' => 'always'],
+            'visibility'  => ['mode' => 'callable', 'fn' => 'settings_visibility_register'],
         ],
         'queue_monitor' => [
             'label_key'   => 'QueueMonitor',
@@ -103,13 +104,6 @@ function settings_catalog(): array
             'visibility'  => ['mode' => 'always'],
         ],
         // --- customization ---
-        'artificial_intelligence_core' => [
-            'label_key'   => 'ArtificialIntelligence',
-            'desc_key'    => 'ArtificialIntelligenceDesc',
-            'path'        => 'admin/artificial_intelligence_core.php',
-            'tags'        => ['customization'],
-            'visibility'  => ['mode' => 'always'],
-        ],
         'settings_preferences' => [
             'label_key'   => 'Preferences',
             'desc_key'    => 'SettingsPreferencesDesc',
@@ -223,14 +217,6 @@ function settings_catalog(): array
             'tags'        => ['extras'],
             'visibility'  => ['mode' => 'always'],
             'extra_name'  => 'advanced_search',
-        ],
-        'ai_extra' => [
-            'label_key'   => 'ArtificialIntelligenceExtra',
-            'desc_key'    => 'ArtificialIntelligenceExtraDesc',
-            'path'        => 'admin/artificial_intelligence.php',
-            'tags'        => ['extras'],
-            'visibility'  => ['mode' => 'always'],
-            'extra_name'  => 'artificial_intelligence',
         ],
         'api_extra' => [
             'label_key'   => 'APIExtra',
@@ -480,6 +466,21 @@ function settings_visibility_fix_encoding_issues(): bool
 }
 
 /******************************************************
+ * FUNCTION: SETTINGS VISIBILITY — REGISTER & UPGRADE  *
+ ******************************************************/
+/**
+ * The Register & Upgrade tile is hidden when the feature is disabled for
+ * this install. register_and_upgrade_disabled() lives in functions.php
+ * (it reads a setting and is also consulted by registration_redirect()
+ * and admin/register.php).
+ */
+function settings_visibility_register(): bool
+{
+    return function_exists('register_and_upgrade_disabled')
+        && !register_and_upgrade_disabled();
+}
+
+/******************************************************
  * FUNCTION: ADD USER FAVORITE SETTINGS               *
  ******************************************************/
 /**
@@ -555,12 +556,11 @@ function list_user_favorite_settings(int $user_id): array
  ******************************************************/
 /**
  * Catalog keys seeded as favorites for every new user (and backfilled
- * for every existing user by upgrade_from_20260422001()). These three
+ * for every existing user by upgrade_from_20260422001()). These two
  * are the high-traffic admin destinations every admin reaches for:
  * Preferences (default values and behavioral toggles — the most-likely
- * first stop after the legacy monolithic Settings tile was split),
- * Health Check (the diagnostic surface), and Register & Upgrade (license
- * key entry and one-click Core upgrades). Same trio rendered by
+ * first stop after the legacy monolithic Settings tile was split) and
+ * Health Check (the diagnostic surface). Same pair rendered by
  * settings-hub.js as the API-failure fallback, so favoriting them by
  * default lines up with "what an admin can always recover to."
  *
@@ -573,7 +573,6 @@ function default_favorite_settings_keys(): array
     return [
         'settings_preferences',
         'health_check',
-        'register',
     ];
 }
 

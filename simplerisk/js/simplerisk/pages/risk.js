@@ -65,6 +65,146 @@ var current_tab_close_object;
 // Variable to be used to prevent the form from being submitted multiple times
 var loading = false;
 
+function initMitigationControlsDatatables(container) {
+    container = container || document;
+
+    $('.mitigation-controls-datatable', container).each(function() {
+        var $table = $(this);
+
+        if ($.fn.DataTable.isDataTable(this)) {
+            return;
+        }
+
+        var tableId = $table.attr('id');
+
+        $table.DataTable({
+            scrollX: true,
+            bFilter: false,
+            processing: true,
+            serverSide: true,
+            bSort: true,
+            ajax: {
+                url: BASE_URL + '/api/v2/datatable/mitigation_controls',
+                type: 'POST',
+                data: function(d) {
+                    var form = $('#' + tableId).parents('form');
+                    d.flag = $table.data('flag');
+                    d.mitigation_id = $table.data('mitigation-id');
+                    if ($('.mitigation_controls', form).length) {
+                        d.control_ids = $('.mitigation_controls', form).val().join(',');
+                    } else {
+                        d.control_ids = $('.mitigation_control_ids', form).val();
+                    }
+                },
+                complete: function(response) {
+                    if (Number(response.responseJSON.recordsTotal) > 0) {
+                        $('#' + tableId).parents('.mitigation-controls-table-container').removeClass('hide');
+                    } else {
+                        $('#' + tableId).parents('.mitigation-controls-table-container').addClass('hide');
+                    }
+                }
+            }
+        });
+    });
+}
+
+function renderRiskCommentsList($container, comments) {
+    var html = '';
+
+    if (comments && comments.length) {
+        for (var i = 0; i < comments.length; i++) {
+            var comment = comments[i];
+            html += '<p class="comment-block"><b>' +
+                $('<div>').text((comment.date || '') + ' by ' + (comment.user || '')).html() +
+                '</b><br />' +
+                $('<div>').text(comment.comment || '').html() +
+                '</p>';
+        }
+    }
+
+    $container.html(html);
+}
+
+function loadRiskComments(riskId, $container) {
+    $container = $container || $('.comments--list[data-lazy-section="comments"]');
+
+    if (!$container.length || $container.data('loaded')) {
+        return;
+    }
+
+    $container.data('loaded', true).html('<p><i class="fa fa-spinner fa-spin"></i></p>');
+
+    $.getJSON(BASE_URL + '/api/v2/risks/' + riskId + '/comments', function(res) {
+        renderRiskCommentsList($container, res.data || []);
+    }).fail(function() {
+        $container.data('loaded', false).html('');
+    });
+}
+
+function loadRiskAuditTrail(riskId, $container) {
+    $container = $container || $('.audit-contents[data-lazy-section="audit-trail"]');
+
+    if (!$container.length || $container.data('loaded')) {
+        return;
+    }
+
+    $container.data('loaded', true).html('<p><i class="fa fa-spinner fa-spin"></i></p>');
+
+    $.getJSON(BASE_URL + '/api/v2/risks/' + riskId + '/audit-trail?days=36500&log_type=risk,jira', function(res) {
+        var html = '';
+
+        if (res.data && res.data.length) {
+            for (var i = 0; i < res.data.length; i++) {
+                var log = res.data[i];
+                html += '<p>' + $('<div>').text((log.timestamp || '') + ' > ' + (log.message || '')).html() + '</p>';
+            }
+        }
+
+        $container.html(html);
+    }).fail(function() {
+        $container.data('loaded', false).html('');
+    });
+}
+
+function loadScoreOverTime(riskId, $container) {
+    $container = $container || $('.score-over-time-lazy[data-lazy-section="score-over-time"]');
+
+    if (!$container.length || $container.data('loaded')) {
+        return;
+    }
+
+    $container.data('loaded', true).html('<p><i class="fa fa-spinner fa-spin"></i></p>');
+
+    $.getJSON(BASE_URL + '/api/v2/management/risk/score_over_time?id=' + riskId, function(res) {
+        $container.html(res.data || '');
+    }).fail(function() {
+        $container.data('loaded', false).html('');
+    });
+}
+
+function setupRiskViewLazySections(riskId) {
+    if (!riskId) {
+        return;
+    }
+
+    $('#audit-trail-accordion-body').one('show.bs.collapse', function() {
+        loadRiskAuditTrail(riskId);
+    });
+
+    $('#comments-accordion-body').one('show.bs.collapse', function() {
+        loadRiskComments(riskId);
+    });
+
+    $('#score-overtime-container-accordion-body').one('show.bs.collapse', function() {
+        loadScoreOverTime(riskId);
+    });
+
+    $('body').on('click.riskViewLazyComments', '.add-comment-menu', function() {
+        var tabContainer = $(this).parents('.tab-data');
+        loadRiskComments(riskId, $('.comments--list[data-lazy-section="comments"]', tabContainer));
+    });
+}
+
 function close_current_tab(index)
 {
     $('#tab-container'+index+'').remove();
@@ -1767,6 +1907,20 @@ $(document).ready(function(){
     }
 
     /**************** End get AI risk recommendations **********/
+
+    if (window.simplerisk_current_risk_id) {
+        setupRiskViewLazySections(window.simplerisk_current_risk_id);
+    }
+
+    $(document).on('shown.bs.tab', 'a[data-bs-target="#mitigation"]', function() {
+        initMitigationControlsDatatables(document);
+    });
+
+    // Safety net: initialize any mitigation-controls tables already in the DOM,
+    // including ones rendered outside the #mitigation tab (the tab-show handler
+    // above only covers the tabbed risk view). isDataTable() inside guards
+    // against double-initialization.
+    initMitigationControlsDatatables(document);
 
     // If there're template tabs we have to separately initialize the WYSIWYG editors
     if ($("#template_group_id").length > 0) {

@@ -401,6 +401,423 @@ function get_framework_control_tests_by_control_id($framework_control_id){
     return $array;
 }
 
+/******************************************************************
+ * FUNCTION: BUILD DEFINE TESTS CONTROL FILTER SQL                *
+ ******************************************************************/
+function build_define_tests_control_filter_sql($filters, &$bind_params)
+{
+    $control_framework = isset($filters['control_framework']) ? (array)$filters['control_framework'] : [];
+    $control_family = isset($filters['control_family']) ? (array)$filters['control_family'] : [];
+    $control_name = isset($filters['control_name']) ? trim((string)$filters['control_name']) : '';
+
+    $sql = "
+        FROM `framework_controls` t1
+            INNER JOIN `framework_control_mappings` m ON t1.id = m.control_id
+            INNER JOIN `frameworks` f ON m.framework = f.value AND f.status = 1
+            LEFT JOIN `family` t5 ON t1.family = t5.value
+            LEFT JOIN `user` t6 ON t1.control_owner = t6.value
+        WHERE t1.deleted = 0
+    ";
+
+    $framework_ids = array_values(array_filter(array_map('intval', $control_framework), function ($val) {
+        return $val > 0;
+    }));
+
+    if (!empty($control_framework) && empty($framework_ids)) {
+        $sql .= " AND 0 ";
+        return [$sql, $control_name];
+    }
+
+    if (!empty($framework_ids)) {
+        $sql .= " AND m.framework IN (" . implode(',', $framework_ids) . ") ";
+    }
+
+    $family_ids = array_values(array_filter(array_map('intval', $control_family), function ($val) {
+        return $val > 0;
+    }));
+    $family_unassigned = in_array(-1, array_map('intval', $control_family), true)
+        || in_array('-1', $control_family, true);
+
+    if (!empty($family_ids) || $family_unassigned) {
+        $family_where = [];
+        if ($family_unassigned) {
+            $family_where[] = "(t5.value IS NULL OR t5.value = '')";
+        }
+        if (!empty($family_ids)) {
+            $family_where[] = "t5.value IN (" . implode(',', $family_ids) . ")";
+        }
+        $sql .= " AND (" . implode(' OR ', $family_where) . ") ";
+    }
+
+    if ($control_name !== '') {
+        $sql .= "
+            AND (
+                t1.short_name LIKE :control_text
+                OR t1.long_name LIKE :control_text
+                OR t1.control_number LIKE :control_text
+                OR t1.description LIKE :control_text
+            )
+        ";
+        $bind_params[':control_text'] = '%' . $control_name . '%';
+    }
+
+    return [$sql, $control_name];
+}
+
+/******************************************************************
+ * FUNCTION: FORMAT STAKEHOLDER NAMES FROM A PRELOADED USER MAP   *
+ ******************************************************************/
+function format_define_tests_stakeholder_names($ids, $names_map, $limit = 3)
+{
+    if (!$ids) {
+        return "";
+    }
+
+    if (is_array($ids)) {
+        $id_array = $ids;
+    } else {
+        $id_array = explode(",", $ids);
+    }
+
+    $names = [];
+    $count = 0;
+    $total = 0;
+
+    foreach ($id_array as $id) {
+        $id = (int)$id;
+        if (!$id) {
+            continue;
+        }
+
+        $total += 1;
+
+        if (isset($names_map[$id])) {
+            $names[] = $names_map[$id];
+            $count += 1;
+        }
+
+        if ($count === $limit) {
+            break;
+        }
+    }
+
+    return implode(", ", $names) . ($total > $limit ? ", ..." : "");
+}
+
+/******************************************************************
+ * FUNCTION: RENDER DEFINE TESTS MAPPED FRAMEWORKS SECTION        *
+ ******************************************************************/
+function render_define_tests_mapping_framework_view($control_id, $mapping_count)
+{
+    global $lang, $escaper;
+
+    $control_id = (int)$control_id;
+    $collapse_id = "mapped-frameworks-collapse-" . $control_id;
+    $table_id = "mapped-frameworks-table-" . $control_id;
+    $framework_count = (int)($mapping_count['frameworks'] ?? 0);
+    $controls_count = (int)($mapping_count['controls'] ?? 0);
+
+    return "
+        <div class='mb-2'>
+            <div class='row bottom cursor-pointer' role='button' data-bs-toggle='collapse' data-bs-target='#{$collapse_id}' data-control-id='{$control_id}'>
+                <div class='col-2 text-right'><label class='cursor-pointer'>{$escaper->escapeHtml($lang['MappedControlFrameworks'])} : </label></div>
+                <div class='col-10'>
+                    <span class='badge bg-secondary me-3 mapped-count'>{$escaper->escapeHtml($lang['Frameworks'])}: {$framework_count} | {$escaper->escapeHtml($lang['Controls'])}: {$controls_count}</span>
+                    <i class='fa fa-chevron-right collapse-caret'></i>
+                </div>
+            </div>
+            <div id='{$collapse_id}' class='collapse mt-2'>
+                <div class='bg-light border p-3'>
+                    <div class='text-muted loading-placeholder'>
+                        Loading mapped frameworks…
+                    </div>
+                    <table id='{$table_id}' class='table table-bordered table-striped table-sm d-none mb-0' width='100%'>
+                        <thead>
+                            <tr>
+                                <th>{$escaper->escapeHtml($lang['Framework'])}</th>
+                                <th>{$escaper->escapeHtml($lang['Control'])}</th>
+                                <th>{$escaper->escapeHtml($lang['ReferenceText'])}</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    ";
+}
+
+/******************************************************************
+ * FUNCTION: RENDER DEFINE TESTS CONTROL CARD HTML                *
+ ******************************************************************/
+function render_define_tests_control_card($control, $tests, $mapping_count, $stakeholder_names_map, $allowed_test_ids = null)
+{
+    global $lang, $escaper;
+
+    $html = "
+        <div class='card border border-primary mb-0'>
+            <div class='card-header d-flex justify-content-between align-items-center'>
+                <div>
+                    <strong>{$escaper->escapeHtml($control['control_number'])}</strong>
+                    <div class='text-muted small'>{$escaper->escapeHtml($control['short_name'])}</div>
+                </div>
+    ";
+
+    if (isset($_SESSION["define_tests"]) && $_SESSION["define_tests"] == 1) {
+        $html .= "
+                <button data-control-id='{$control['id']}' class='btn btn-sm btn-dark add-test'>{$escaper->escapeHtml($lang['AddTest'])}</button>
+        ";
+    }
+
+    $html .= "
+            </div>
+            <div class='card-body'>
+                <div class='row mb-2 top'>
+                    <div class='col-2 text-right'><label>{$escaper->escapeHtml($lang['ControlLongName'])} :</label></div>
+                    <div class='col-10'>{$escaper->escapeHtml($control['long_name'])}</div>
+                </div>
+                <div class='row mb-2 top'>
+                    <div class='col-2 text-right'><label>{$escaper->escapeHtml($lang['ControlOwner'])} :</label></div>
+                    <div class='col-10'>{$escaper->escapeHtml($control['control_owner_name'])}</div>
+                </div>
+                <div class='row mb-2 top'>
+                    <div class='col-2 text-right'><label>{$escaper->escapeHtml($lang['Description'])} :</label></div>
+                    <div class='col-10'>{$escaper->purifyHtml($control['description'])}</div>
+                </div>" .
+                render_define_tests_mapping_framework_view($control['id'], $mapping_count) . "
+                <div class='framework-control-test-list'>
+                    <table width='100%' class='table table-bordered table-striped table-condensed sortable mb-0'>
+                        <thead class='table-active'>
+                            <tr>
+                                <th style='width: 100px; min-width: 100px'>{$escaper->escapeHtml($lang['ID'])}</th>
+                                <th style='width: 150px; min-width: 150px'>{$escaper->escapeHtml($lang['TestName'])}</th>
+                                <th style='width: 100px; min-width: 100px'>{$escaper->escapeHtml($lang['Tester'])}</th>
+                                <th style='width: 100px; min-width: 100px'>{$escaper->escapeHtml($lang['AdditionalStakeholders'])}</th>
+                                <th style='width: 150px; min-width: 150px'>{$escaper->escapeHtml($lang['Tags'])}</th>
+                                <th style='width: 110px; min-width: 110px'>{$escaper->escapeHtml($lang['TestFrequency'])}</th>
+                                <th style='width: 110px; min-width: 110px'>{$escaper->escapeHtml($lang['LastTestDate'])}</th>
+                                <th style='width: 110px; min-width: 110px'>{$escaper->escapeHtml($lang['NextTestDate'])}</th>
+                                <th style='width: 110px; min-width: 110px'>{$escaper->escapeHtml($lang['AutoInitiateAudit'])}</th>
+                                <th style='width: 110px; min-width: 110px'>{$escaper->escapeHtml($lang['AuditInitiationOffset'])}</th>
+                                <th style='width: 130px; min-width: 130px'>{$escaper->escapeHtml($lang['ApproximateTime'])}</th>
+                                <th class='text-center' style='width: 50px; min-width: 50px'>{$escaper->escapeHtml($lang['Actions'])}</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+    ";
+
+    foreach ($tests as $test) {
+        if ($allowed_test_ids !== null && !isset($allowed_test_ids[$test['id']])) {
+            continue;
+        }
+
+        $tags_view = "";
+        if ($test['tags']) {
+            foreach (str_getcsv($test['tags']) as $tag) {
+                $tags_view .= "
+                    <button class='btn btn-secondary btn-sm' style='pointer-events: none;margin-right:2px;padding: 4px 12px;' role='button' aria-disabled='true'>{$escaper->escapeHtml($tag)}</button>
+                ";
+            }
+        }
+
+        $last_date = format_date($test['last_date']);
+        $next_date = format_date($test['next_date']);
+        $auto_audit_initiation = isset($test['audit_initiation_offset']) ? $escaper->escapeHtml($lang['Yes']) : $escaper->escapeHtml($lang['No']);
+        $audit_initiation_offset = isset($test['audit_initiation_offset'])
+            ? $escaper->escapeHtml($test['audit_initiation_offset']) . " " . ($test['audit_initiation_offset'] > 1 ? $escaper->escapeHtml($lang['days']) : $escaper->escapeHtml($lang['day']))
+            : "--";
+
+        if (isset($_SESSION["edit_tests"]) && $_SESSION["edit_tests"] == 1) {
+            $edit_row = "
+                <a class='edit-test mx-1' data-id='{$escaper->escapeHtml($test['id'])}' role='button'><i class='fa fa-edit'></i></a>
+            ";
+        } else {
+            $edit_row = "";
+        }
+
+        if (isset($_SESSION["delete_tests"]) && $_SESSION["delete_tests"] == 1) {
+            $delete_row = "
+                <a class='delete-row mx-1' data-toggle='modal' data-id='{$escaper->escapeHtml($test['id'])}' role='button'><i class='fa fa-trash'></i></a>
+            ";
+        } else {
+            $delete_row = "";
+        }
+
+        $html .= "
+                            <tr>
+                                <td>{$escaper->escapeHtml($test['id'])}</td>
+                                <td>{$escaper->escapeHtml($test['name'])}</td>
+                                <td>{$escaper->escapeHtml($test['tester_name'])}</td>
+                                <td>{$escaper->escapeHtml(format_define_tests_stakeholder_names($test['additional_stakeholders'], $stakeholder_names_map, 3))}</td>
+                                <td>{$tags_view}</td>
+                                <td class='text-center'>" . (int)$test['test_frequency'] . " {$escaper->escapeHtml($test['test_frequency'] > 1 ? $escaper->escapeHtml($lang['days']) : $escaper->escapeHtml($lang['Day']))}</td>
+                                <td class='text-center'>{$escaper->escapeHtml($last_date)}</td>
+                                <td class='text-center'>{$escaper->escapeHtml($next_date)}</td>
+                                <td class='text-center'>{$auto_audit_initiation}</td>
+                                <td class='text-center'>{$audit_initiation_offset}</td>
+                                <td class='text-center'>" . (int)$test['approximate_time'] . " {$escaper->escapeHtml($test['approximate_time'] > 1 ? $escaper->escapeHtml($lang['minutes']) : $escaper->escapeHtml($lang['minute']))}</td>
+                                <td class='text-center'>{$edit_row}{$delete_row}</td>
+                            </tr>
+        ";
+    }
+
+    $html .= "
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    ";
+
+    return $html;
+}
+
+/******************************************************************
+ * FUNCTION: GET DEFINE TESTS DATATABLE DATA                      *
+ ******************************************************************/
+function get_define_tests_datatable_data($filters, $start = 0, $length = 10)
+{
+    $bind_params = [];
+    list($filter_sql) = build_define_tests_control_filter_sql($filters, $bind_params);
+
+    $allowed_test_ids = null;
+    if (team_separation_extra()) {
+        require_once(realpath(__DIR__ . '/../extras/separation/index.php'));
+        if (!should_skip_test_and_audit_permission_check()) {
+            $access_info = get_compliance_separation_access_info();
+            $allowed_test_ids = array_flip($access_info['framework_control_tests']);
+        }
+    }
+
+    $db = db_open();
+
+    $count_sql = "SELECT COUNT(DISTINCT t1.id) " . $filter_sql;
+    $stmt = $db->prepare($count_sql);
+    foreach ($bind_params as $param => $value) {
+        $stmt->bindValue($param, $value, PDO::PARAM_STR);
+    }
+    $stmt->execute();
+    $records_total = (int)$stmt->fetchColumn();
+
+    $select_sql = "
+        SELECT DISTINCT
+            t1.id,
+            t1.control_number,
+            t1.short_name,
+            t1.long_name,
+            t1.description,
+            t6.name AS control_owner_name
+        " . $filter_sql . "
+        ORDER BY t1.id
+    ";
+
+    if ($length !== -1) {
+        $select_sql .= " LIMIT :start, :length ";
+    }
+
+    $stmt = $db->prepare($select_sql);
+    foreach ($bind_params as $param => $value) {
+        $stmt->bindValue($param, $value, PDO::PARAM_STR);
+    }
+    if ($length !== -1) {
+        $stmt->bindValue(':start', (int)$start, PDO::PARAM_INT);
+        $stmt->bindValue(':length', (int)$length, PDO::PARAM_INT);
+    }
+    $stmt->execute();
+    $controls = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    if (empty($controls)) {
+        db_close($db);
+        return [
+            'data' => [],
+            'recordsTotal' => $records_total,
+            'recordsFiltered' => $records_total,
+        ];
+    }
+
+    $control_ids = array_map('intval', array_column($controls, 'id'));
+    $control_id_list = implode(',', $control_ids);
+
+    $tests_by_control = [];
+    $stmt = $db->prepare("
+        SELECT
+            t1.*,
+            t2.name AS tester_name,
+            GROUP_CONCAT(DISTINCT tg.tag ORDER BY tg.tag) AS tags
+        FROM `framework_control_tests` t1
+            LEFT JOIN `user` t2 ON t1.tester = t2.value
+            LEFT JOIN tags_taggees tt ON tt.taggee_id = t1.id AND tt.type = 'test'
+            LEFT JOIN tags tg ON tg.id = tt.tag_id
+        WHERE t1.framework_control_id IN ({$control_id_list})
+        GROUP BY t1.id
+    ");
+    $stmt->execute();
+    foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $test) {
+        $tests_by_control[(int)$test['framework_control_id']][] = $test;
+    }
+
+    $mapping_counts = [];
+    $stmt = $db->prepare("
+        SELECT
+            control_id,
+            COUNT(DISTINCT framework) AS frameworks,
+            COUNT(DISTINCT reference_name) AS controls
+        FROM `framework_control_mappings`
+        WHERE control_id IN ({$control_id_list})
+        GROUP BY control_id
+    ");
+    $stmt->execute();
+    foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        $mapping_counts[(int)$row['control_id']] = [
+            'frameworks' => (int)$row['frameworks'],
+            'controls' => (int)$row['controls'],
+        ];
+    }
+
+    $stakeholder_ids = [];
+    foreach ($tests_by_control as $tests) {
+        foreach ($tests as $test) {
+            if (empty($test['additional_stakeholders'])) {
+                continue;
+            }
+            foreach (explode(',', $test['additional_stakeholders']) as $stakeholder_id) {
+                $stakeholder_id = (int)$stakeholder_id;
+                if ($stakeholder_id) {
+                    $stakeholder_ids[$stakeholder_id] = true;
+                }
+            }
+        }
+    }
+
+    $stakeholder_names_map = [];
+    if (!empty($stakeholder_ids)) {
+        $stakeholder_id_list = implode(',', array_keys($stakeholder_ids));
+        $stmt = $db->prepare("SELECT value, name FROM `user` WHERE value IN ({$stakeholder_id_list})");
+        $stmt->execute();
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $user) {
+            $stakeholder_names_map[(int)$user['value']] = $user['name'];
+        }
+    }
+
+    db_close($db);
+
+    $data = [];
+    foreach ($controls as $control) {
+        $control_id = (int)$control['id'];
+        $tests = $tests_by_control[$control_id] ?? [];
+        $mapping_count = $mapping_counts[$control_id] ?? ['frameworks' => 0, 'controls' => 0];
+        $data[] = [
+            render_define_tests_control_card($control, $tests, $mapping_count, $stakeholder_names_map, $allowed_test_ids),
+        ];
+    }
+
+    return [
+        'data' => $data,
+        'recordsTotal' => $records_total,
+        'recordsFiltered' => $records_total,
+    ];
+}
+
 /***************************************************
  * FUNCTION: GET FRAMEWORK CONTROL TEST BY TEST ID *
  ***************************************************/
@@ -805,6 +1222,9 @@ function initiate_framework_control_tests($type, $id, $tags=[]){
         } else {
             $separation_enabled = true;
             $compliance_separation_access_info = get_compliance_separation_access_info();
+            $allowed_frameworks = array_flip($compliance_separation_access_info['frameworks']);
+            $allowed_controls = array_flip($compliance_separation_access_info['framework_controls']);
+            $allowed_tests = array_flip($compliance_separation_access_info['framework_control_tests']);
         }
     } else
         $separation_enabled = false;
@@ -815,7 +1235,7 @@ function initiate_framework_control_tests($type, $id, $tags=[]){
     $name = null;
     switch($type){
         case "framework":
-            if ($separation_enabled && !in_array($id, $compliance_separation_access_info['frameworks']))
+            if ($separation_enabled && !isset($allowed_frameworks[$id]))
                 return false;
             
             $framework = get_framework($id);
@@ -843,14 +1263,14 @@ function initiate_framework_control_tests($type, $id, $tags=[]){
             
             foreach($test_ids as $test_id){
                 // @phan-suppress-next-line PhanTypePossiblyInvalidDimOffset
-                if ($separation_enabled && !in_array($test_id, $compliance_separation_access_info['framework_control_tests']))
+                if ($separation_enabled && !isset($allowed_tests[$test_id]))
                     continue;
 
                 initiate_test_audit($test_id, $initiated_audit_status, $tags);
             }
         break;
         case "control":
-            if ($separation_enabled && !in_array($id, $compliance_separation_access_info['framework_controls']))
+            if ($separation_enabled && !isset($allowed_controls[$id]))
                 return false;
 
             $control = get_framework_control($id);
@@ -870,14 +1290,14 @@ function initiate_framework_control_tests($type, $id, $tags=[]){
             $test_ids = $stmt->fetchAll(PDO::FETCH_COLUMN, 0);
             foreach($test_ids as $test_id){
                 // @phan-suppress-next-line PhanTypePossiblyInvalidDimOffset
-                if ($separation_enabled && !in_array($test_id, $compliance_separation_access_info['framework_control_tests']))
+                if ($separation_enabled && !isset($allowed_tests[$test_id]))
                     continue;
 
                 initiate_test_audit($test_id, $initiated_audit_status, $tags);
             }
         break;
         case "test":
-            if ($separation_enabled && !in_array($id, $compliance_separation_access_info['framework_control_tests']))
+            if ($separation_enabled && !isset($allowed_tests[$id]))
                 return false;
 
             $name = initiate_test_audit($id, $initiated_audit_status, $tags);
@@ -2698,7 +3118,23 @@ function get_initiate_frameworks_by_filter($filter_by_text, $filter_by_status, $
     $results = array();
     $ids = array();
     // Get unique array
+    $unique_frameworks = array();
     foreach ($filtered_frameworks as $filtered_framework) {
+        if (!in_array($filtered_framework['value'], $ids)) {
+            $unique_frameworks[] = $filtered_framework;
+            $ids[] = $filtered_framework['value'];
+        }
+    }
+
+    // Only show top-level framework nodes (e.g. SCF root), not child frameworks
+    // whose parent is also in the list — matches the governance framework tree.
+    $all_values = array_column($unique_frameworks, 'value');
+    $ids = array();
+    foreach ($unique_frameworks as $filtered_framework) {
+        $parent = (int)($filtered_framework['parent'] ?? 0);
+        if ($parent !== 0 && in_array($parent, $all_values, true)) {
+            continue;
+        }
         if (!in_array($filtered_framework['value'], $ids) && in_array($filtered_framework['value'], $filter_by_framework)) {
             $results[] = $filtered_framework;
             $ids[] = $filtered_framework['value'];

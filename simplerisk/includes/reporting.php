@@ -3951,7 +3951,7 @@ function get_risks_by_table($status, $sort=0, $group=0, $table_columns=[]) {
 
                     // If the group is not the current group
                     // if ($group_value != $current_group && !in_array($group_value, $displayed_group_names))
-                    if (!in_array($group_value, $displayed_group_names)) {
+                    if (!isset($displayed_group_names[$group_value])) {
 
 // If this is not the first group
 //                        if ($current_group != "")
@@ -3961,7 +3961,7 @@ function get_risks_by_table($status, $sort=0, $group=0, $table_columns=[]) {
 //                            echo "<br />\n";
 //                        }
 
-                        $displayed_group_names[] = $group_value;
+                        $displayed_group_names[$group_value] = true;
 
                         $length = count($table_columns);
                         
@@ -4072,6 +4072,13 @@ function get_risks_by_group($status, $group, $sort, $group_value, $display_colum
         }
 
         $data_row = [];
+        $custom_values_by_field = [];
+        if (customization_extra()) {
+            require_once(realpath(__DIR__ . '/../extras/customization/index.php'));
+            foreach (getCustomFieldValuesByRiskId($row['id']) as $custom_value) {
+                $custom_values_by_field[$custom_value['field_id']] = $custom_value;
+            }
+        }
 
         foreach ($display_columns as $column) {
             if(stripos($column, "custom_field_") === false){
@@ -4132,18 +4139,11 @@ function get_risks_by_group($status, $group, $sort, $group_value, $display_colum
                         break;
                 }
             } else if(customization_extra()) {
-                // Include the extra
-                require_once(realpath(__DIR__ . '/../extras/customization/index.php'));
                 $field_id = str_replace("custom_field_", "", $column);
-                $custom_values = getCustomFieldValuesByRiskId($row['id']);
                 $custom_data_row = "";
-                foreach($custom_values as $custom_value)
-                {
-                    // Check if this custom value is for the active field
-                    if($custom_value['field_id'] == $field_id){
-                        $custom_data_row = get_custom_field_name_by_value($field_id, $custom_value['field_type'], $custom_value['encryption'], $custom_value['value']);
-                        break;
-                    }
+                if (isset($custom_values_by_field[$field_id])) {
+                    $custom_value = $custom_values_by_field[$field_id];
+                    $custom_data_row = get_custom_field_name_by_value($field_id, $custom_value['field_type'], $custom_value['encryption'], $custom_value['value']);
                 }
                 $data_row[] = $custom_data_row;
                 $row["custom_field_".$field_id] = strip_tags($custom_data_row);
@@ -5992,6 +5992,18 @@ function get_risks_only_dynamic($need_total_count, $status, $sort, $group, $colu
 
     $start = (int)$start;
     $length = (int)$length;
+
+    $use_sql_pagination = (
+        $length !== -1
+        && empty($requested_manual_column_filters)
+        && $orderColumnName !== 'management_review'
+        && $orderColumnName !== 'next_review_date'
+        && !$encryption_order
+    );
+
+    if ($use_sql_pagination) {
+        $query .= " LIMIT " . max(0, $start) . ", " . max(0, $length);
+    }
     
     // Query the database
     $db = db_open();
@@ -6027,6 +6039,11 @@ function get_risks_only_dynamic($need_total_count, $status, $sort, $group, $colu
     $filtered_risks = [];
     
     $review_levels = get_review_levels();
+    $next_review_date_uses = get_setting('next_review_date_uses');
+
+    if ($use_sql_pagination) {
+        $filtered_risks = $risks;
+    } else {
 
     // If we're ordering by the 'management_review' column
     if ($orderColumnName === 'management_review') {
@@ -6037,7 +6054,7 @@ function get_risks_only_dynamic($need_total_count, $status, $sort, $group, $colu
             $residual_risk_level = get_risk_level_name($risk['residual_risk']);
 
             // If next_review_date_uses setting is Residual Risk.
-            if(get_setting('next_review_date_uses') == "ResidualRisk")
+            if($next_review_date_uses == "ResidualRisk")
             {
                 $next_review = next_review($residual_risk_level, $risk['id'], $risk['next_review'], false, $review_levels);
             }
@@ -6108,7 +6125,7 @@ function get_risks_only_dynamic($need_total_count, $status, $sort, $group, $colu
                 $residual_risk_level = get_risk_level_name($risk['residual_risk']);
 
                 // If next_review_date_uses setting is Residual Risk.
-                if(get_setting('next_review_date_uses') == "ResidualRisk")
+                if($next_review_date_uses == "ResidualRisk")
                 {
                     $next_review = next_review($residual_risk_level, $risk['id'], $risk['next_review'], false, $review_levels);
                 }
@@ -6145,7 +6162,7 @@ function get_risks_only_dynamic($need_total_count, $status, $sort, $group, $colu
                 $residual_risk_level = get_risk_level_name($risk['residual_risk']);
 
                 // If next_review_date_uses setting is Residual Risk.
-                if(get_setting('next_review_date_uses') == "ResidualRisk")
+                if($next_review_date_uses == "ResidualRisk")
                 {
                     $next_review = next_review($residual_risk_level, $risk['id'], $risk['next_review'], false, $review_levels);
                 }
@@ -6193,7 +6210,9 @@ function get_risks_only_dynamic($need_total_count, $status, $sort, $group, $colu
         if($success) $filtered_risks[] = $risk;
     }
 
-    if($encryption_order != false) {
+    } // end slow path (manual PHP filtering)
+
+    if(!$use_sql_pagination && $encryption_order != false) {
         usort($filtered_risks, function($a, $b) use ($orderDir) {
             if($orderDir == "asc") 
                 return strcasecmp($a['encryption_order'] ?? '', $b['encryption_order'] ?? '');
@@ -6204,7 +6223,7 @@ function get_risks_only_dynamic($need_total_count, $status, $sort, $group, $colu
 
     $risks_by_page = [];
     
-    if($length == -1)
+    if($length == -1 || $use_sql_pagination)
     {
         $risks_by_page = $filtered_risks;
     }

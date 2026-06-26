@@ -48,7 +48,11 @@
 			$required = get_param("POST", "required", 0);
 			$encryption = get_param("POST", "encryption", 0);
 			$alphabetical_order = get_param("POST", "alphabetical_order", 0);
-			
+			$template_group_id = get_param("POST", "template_group_id", "");
+			$row_id = get_param("POST", "row_id", 0);
+			$panel_name = get_param("POST", "panel_name", "left");
+			$ordering = get_param("POST", "ordering", 0);
+
 			if (!$id || !$name) {
 
 				// Display an alert
@@ -57,6 +61,11 @@
 			} else {
 
 				if (update_custom_field($id, $name, $required, $encryption, $alphabetical_order)) {
+
+					// Persist the column (panel) + ordering for this group.
+					if ($template_group_id && $row_id) {
+						update_template_field_placement($template_group_id, $row_id, $panel_name, $ordering);
+					}
 
 					$_SESSION['custom_field_id'] = (int)$id;
 
@@ -76,9 +85,10 @@
 			$required = isset($_POST['required']) ? 1 : 0;
 			$encryption = isset($_POST['encryption']) ? 1 : 0;
 			$alphabetical_order = isset($_POST['alphabetical_order']) ? 1 : 0;
+			$panel_name = get_param("POST", "panel_name", "left");
 
 			// Create the new field
-			if ($field_id = create_field($fgroup, $name, $type, $required, $encryption, $alphabetical_order)) {
+			if ($field_id = create_field($fgroup, $name, $type, $required, $encryption, $alphabetical_order, $panel_name)) {
 
 				// Set field_id as Session variable for auto select of custom fields dropdown
 				$_SESSION['custom_field_id'] = $field_id;
@@ -133,7 +143,7 @@
 				// Display an alert
 				set_alert(true, "bad", $escaper->escapeHtml($lang['TheNameFieldIsRequired']));
 
-			} else if ($old_group && $name == $old_group['name']) { 
+			} else if ($old_group && (int)$old_group['id'] !== (int)$id) { 
 				
 				set_alert(true, "bad", $escaper->escapeHtml($lang['TheNameAlreadyExists']));
 
@@ -146,6 +156,28 @@
 
 			refresh();
 			
+		// If set active template group submitted
+		} else if (isset($_POST['set_active_template_group'])) {
+
+			$id = get_param("POST", "id");
+			$fgroup = get_param("POST", "fgroup", "risk");
+
+			if (!$id) {
+
+				set_alert(true, "bad", $escaper->escapeHtml($lang['YouNeedToSpecifyAnIdParameter']));
+
+			} else if (set_active_template_group($id, $fgroup)) {
+
+				set_alert(true, "good", $escaper->escapeHtml($lang['SavedSuccess']));
+
+			} else {
+
+				set_alert(true, "bad", $escaper->escapeHtml($lang['FailedToUpdateItem']));
+
+			}
+
+			refresh();
+
 		// If delete template group submitted
 		} else if (isset($_POST['delete_template_group'])) {
 
@@ -165,28 +197,32 @@
 
 			refresh();
 
-		// If assign template group to bussiness unit
-		} else if (isset($_POST['assign_template'])) {
+		// Save built-in field layout (show/hide + column + order)
+		} else if (isset($_POST['update_field_layout'])) {
 
-			$fgroup = get_param("POST", "fgroup");
-			$business_unit_ids = get_param("POST", "business_unit_ids");
-			
-			if (!$business_unit_ids) {
+			$template_group_id = get_param("POST", "template_group_id", "1");
+			$bf = get_param("POST", "bf", []);
 
-				// Display an alert
+			update_basic_field_layout($template_group_id, $bf);
+
+			set_alert(true, "good", $escaper->escapeHtml("Field layout saved."));
+
+			refresh();
+
+		// Delete a custom field
+		} else if (isset($_POST['delete-custom-field'])) {
+
+			$id = get_param("POST", "id");
+
+			if (!$id) {
+
 				set_alert(true, "bad", $escaper->escapeHtml($lang['YouNeedToSpecifyAnIdParameter']));
 
 			} else {
 
-				if (assign_template_to_business_unit($fgroup, $business_unit_ids)) {
+				delete_custom_field($id);
 
-					set_alert(true, "good", $escaper->escapeHtml($lang['SavedSuccess']));
-
-				} else {
-
-					set_alert(true, "bad", $escaper->escapeHtml($lang['UpdateFailed']));
-
-				}
+				set_alert(true, "good", $escaper->escapeHtml("Custom field deleted."));
 
 			}
 

@@ -5,6 +5,16 @@
 
 // Render the header and sidebar
 require_once(realpath(__DIR__ . '/../includes/renderutils.php'));
+
+// Register & Upgrade is disabled for this install — bounce back to the
+// Settings Hub. Checked before render_header_and_sidebar() so no headers
+// have been emitted yet and the redirect takes effect.
+if (register_and_upgrade_disabled())
+{
+	header("Location: index.php");
+	exit(0);
+}
+
 render_header_and_sidebar([], ['check_admin' => true]);
 
 if(isset($_POST['submit_mysqlpath'])){

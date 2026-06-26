@@ -5,7 +5,7 @@
 
 // Render the header and sidebar
 require_once(realpath(__DIR__ . '/../includes/renderutils.php'));
-render_header_and_sidebar(['blockUI', 'tabs:logic', 'selectize', 'datatables', 'chart.js', 'WYSIWYG', 'multiselect', 'CUSTOM:common.js', 'CUSTOM:pages/risk.js', 'CUSTOM:cve_lookup.js', 'datetimerangepicker', 'JSLocalization', 'EXTRA:JS:artificial_intelligence:ai-chat.js'], ['check_riskmanagement' => true, 'show_ai_chat' => true], required_localization_keys: ['MitigationPlanned']);
+render_header_and_sidebar(['blockUI', 'tabs:logic', 'selectize', 'datatables', 'chart.js', 'WYSIWYG', 'multiselect', 'CUSTOM:common.js', 'CUSTOM:pages/risk.js', 'CUSTOM:cve_lookup.js', 'datetimerangepicker', 'JSLocalization'], ['check_riskmanagement' => true], required_localization_keys: ['MitigationPlanned']);
 
 // Check if the user has access to submit risks
 if (!isset($_SESSION["submit_risks"]) || $_SESSION["submit_risks"] != 1) {
@@ -51,7 +51,9 @@ if (!empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQ
     $risk_tags = get_param("POST", "tags", []);
 
     if(customization_extra()) {
-        $template_group_id = get_param("POST", "template_group_id", "");
+        require_once(realpath(__DIR__ . '/../extras/customization/index.php'));
+        $group = get_default_template_group("risk");
+        $template_group_id = $group ? $group["id"] : "";
     } else $template_group_id = "";
 
     foreach($risk_tags as $tag){

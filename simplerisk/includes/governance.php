@@ -336,8 +336,20 @@ function get_frameworks_count($status)
  **********************************/
 function get_framework_controls_count($deleted = false) {
     $db = db_open();
-    $stmt = $db->prepare("SELECT count(1) FROM `framework_controls` WHERE `deleted` = :deleted;");
-    $stmt->bindParam(":deleted", $deleted);
+
+    if ($deleted) {
+        $stmt = $db->prepare("SELECT count(1) FROM `framework_controls` WHERE `deleted` = :deleted;");
+        $stmt->bindParam(":deleted", $deleted);
+    } else {
+        $visibility_sql = framework_controls_active_framework_visibility_sql('t1');
+        $stmt = $db->prepare("
+            SELECT count(1)
+            FROM `framework_controls` t1
+            WHERE t1.`deleted` = 0
+                AND {$visibility_sql}
+        ");
+    }
+
     $stmt->execute();
     
     $count = (int)$stmt->fetchColumn();
@@ -459,12 +471,8 @@ function get_framework_controls($control_ids=false)
             $framework_ids_arr = explode(",", $control['framework_ids']);
             $control['framework_names'] = array();
             foreach($framework_ids_arr as $framework_id){
-                foreach($frameworks as $framework){
-                    if($framework_id == $framework['value'])
-                    {
-                        $control['framework_names'][] = $framework['name'];
-                        break;
-                    }
+                if (!empty($frameworks[$framework_id]['name'])) {
+                    $control['framework_names'][] = $frameworks[$framework_id]['name'];
                 }
             }
             $control['framework_names'] = implode(", ", $control['framework_names']);
@@ -501,6 +509,7 @@ function get_framework_controls_by_filter($control_class="all", $control_phase="
             LEFT JOIN `framework_control_type_mappings` t9 on t1.id=t9.control_id
             LEFT JOIN `control_type` ctype on ctype.value=t9.control_type_id
         WHERE t1.deleted=0
+            AND " . framework_controls_active_framework_visibility_sql('t1') . "
     ";
     
     // If control class ID is requested.
@@ -661,6 +670,7 @@ function get_framework_controls_by_filter($control_class="all", $control_phase="
     if($control_framework && is_array($control_framework)){
         $where = [0];
         $where_or_ids = [];
+        $include_unassigned = false;
         foreach($control_framework as $val){
             $val = (int)$val;
             if($val)
@@ -668,7 +678,7 @@ function get_framework_controls_by_filter($control_class="all", $control_phase="
                 // If unassigned option.
                 if($val == -1)
                 {
-                    $where[] = "m.control_id is NULL";
+                    $include_unassigned = true;
                 }
                 else
                 {
@@ -676,8 +686,15 @@ function get_framework_controls_by_filter($control_class="all", $control_phase="
                 }
             }
         }
+        $selected_framework_ids = $where_or_ids;
+        $where_or_ids = expand_framework_filter_ids($where_or_ids);
+        if ($include_unassigned) {
+            $where[] = "m.control_id is NULL";
+        }
         if (!empty($where_or_ids)) {
             $where[] = "m.framework IN (".implode(",", $where_or_ids).")";
+        } elseif (!$include_unassigned && !empty($selected_framework_ids)) {
+            $where = [0];
         }
         
         $sql .= " AND (". implode(" OR ", $where) . ")";
@@ -777,6 +794,24 @@ function get_framework_controls_by_filter($control_class="all", $control_phase="
     
     $frameworks = get_frameworks(1);
 
+    $assets_by_control = [];
+    if ($control_text) {
+        require_once(realpath(__DIR__ . '/assets.php'));
+        $control_ids_for_assets = array_map('intval', array_column($controls, 'id'));
+        $assets_by_control = get_control_to_assets_for_controls($control_ids_for_assets);
+    }
+
+    $custom_search_fields = [];
+    if ($control_text && customization_extra()) {
+        require_once(realpath(__DIR__ . '/../extras/customization/index.php'));
+        $active_fields = get_active_fields("control", "", 1);
+        foreach ($active_fields as $field) {
+            if ((int)$field['is_basic'] === 0 && (int)$field['active'] === 1 && (int)$field['tab_index'] === 1) {
+                $custom_search_fields[] = $field;
+            }
+        }
+    }
+
     foreach ($controls as $key => $control)
     {
         // Get framework names from framework Ids string
@@ -821,7 +856,7 @@ function get_framework_controls_by_filter($control_class="all", $control_phase="
 
         // Search for the Mapped Assets Content
         $mapped_assets_match = false;
-        $mapped_assets = get_control_to_assets((int)$control['id']);
+        $mapped_assets = $assets_by_control[(int)$control['id']] ?? [];
         foreach ($mapped_assets as $mapped_asset) {
             if (stripos((string)$mapped_asset['control_maturity_name'], $control_text) !== false) {
                 $mapped_assets_match = true;
@@ -849,26 +884,14 @@ function get_framework_controls_by_filter($control_class="all", $control_phase="
         }
 
         // Search for the Custom Fields Content if customization extra is enabled
-        if (customization_extra()) {
-            require_once(realpath(__DIR__ . '/../extras/customization/index.php'));
-
-            $custom_search_fields = [];
-            $active_fields = get_active_fields("control", "", 2);
-            foreach ($active_fields as $field) {
-                if ((int)$field['is_basic'] === 0 && (int)$field['active'] === 1 && (int)$field['tab_index'] === 2) {
-                    $custom_search_fields[] = $field;
-                }
-            }
-
+        if (!empty($custom_search_fields)) {
             $custom_fields_match = false;
-            if (!empty($custom_search_fields)) {
-                foreach ($custom_search_fields as $field) {
-                    $custom_value = get_plan_custom_field_name_by_row_id($field, $control["id"], "control");
-                    $custom_value_text = trim(strip_tags((string)$custom_value));
-                    if ($custom_value_text !== "" && stripos($custom_value_text, $control_text) !== false) {
-                        $custom_fields_match = true;
-                        break;
-                    }
+            foreach ($custom_search_fields as $field) {
+                $custom_value = get_plan_custom_field_name_by_row_id($field, $control["id"], "control");
+                $custom_value_text = trim(strip_tags((string)$custom_value));
+                if ($custom_value_text !== "" && stripos($custom_value_text, $control_text) !== false) {
+                    $custom_fields_match = true;
+                    break;
                 }
             }
 
@@ -884,6 +907,692 @@ function get_framework_controls_by_filter($control_class="all", $control_phase="
     db_close($db);
 
     return $filtered_controls;
+}
+
+/******************************************************************
+ * FUNCTION: APPEND MULTISELECT FILTER TO CONTROLS DATATABLE SQL  *
+ ******************************************************************/
+function framework_controls_datatable_append_multiselect_filter(&$sql, $filter_value, $unassigned_condition, $assigned_ids, $assigned_condition_template)
+{
+    if ($filter_value === "all" || $filter_value === null || $filter_value === "") {
+        $sql .= " AND 1 ";
+        return;
+    }
+
+    if (!is_array($filter_value) || empty($filter_value)) {
+        $sql .= " AND 1 ";
+        return;
+    }
+
+    $where = [0];
+    $where_ids = [];
+
+    foreach ($filter_value as $val) {
+        $val = (int)$val;
+        if ($val) {
+            if ($val == -1) {
+                $where[] = $unassigned_condition;
+            } else {
+                $where_ids[] = $val;
+            }
+        }
+    }
+
+    if (!empty($where_ids)) {
+        $where[] = sprintf($assigned_condition_template, implode(",", $where_ids));
+    }
+
+    $sql .= " AND (" . implode(" OR ", $where) . ") ";
+}
+
+/******************************************************************
+ * FUNCTION: BUILD SQL FOR LEAF (NON-PARENT) FRAMEWORK CHECK      *
+ ******************************************************************/
+function framework_is_leaf_framework_sql($framework_alias = 'f')
+{
+    return "NOT EXISTS (
+        SELECT 1
+        FROM `frameworks` f_child
+        WHERE f_child.parent = {$framework_alias}.value
+    )";
+}
+
+/******************************************************************
+ * FUNCTION: EXPAND FRAMEWORK FILTER IDS TO LEAF DESCENDANTS      *
+ ******************************************************************/
+function expand_framework_filter_ids($framework_ids)
+{
+    $framework_ids = array_values(array_filter(array_map('intval', (array)$framework_ids), function ($id) {
+        return $id > 0;
+    }));
+
+    if (empty($framework_ids)) {
+        return [];
+    }
+
+    $db = db_open();
+    $parents_with_children = array_flip(array_map('intval', $db->query("
+        SELECT DISTINCT parent
+        FROM frameworks
+        WHERE parent <> 0
+    ")->fetchAll(PDO::FETCH_COLUMN)));
+    db_close($db);
+
+    $expanded = [];
+    foreach ($framework_ids as $framework_id) {
+        $descendants = get_all_child_frameworks($framework_id, 1);
+        if (!empty($descendants)) {
+            foreach ($descendants as $descendant) {
+                $descendant_id = (int)($descendant['value'] ?? 0);
+                if ($descendant_id && !isset($parents_with_children[$descendant_id])) {
+                    $expanded[] = $descendant_id;
+                }
+            }
+        } elseif (!isset($parents_with_children[$framework_id])) {
+            $expanded[] = $framework_id;
+        }
+    }
+
+    return array_values(array_unique($expanded));
+}
+
+/******************************************************************
+ * FUNCTION: BUILD SQL FOR CONTROLS VISIBLE WITH ACTIVE FRAMEWORKS *
+ ******************************************************************/
+function framework_controls_active_framework_visibility_sql($control_alias = 't1')
+{
+    $leaf_sql = framework_is_leaf_framework_sql('f_vis');
+
+    return "(
+        NOT EXISTS (
+            SELECT 1
+            FROM `framework_control_mappings` m_vis
+            WHERE m_vis.control_id = {$control_alias}.id
+        )
+        OR EXISTS (
+            SELECT 1
+            FROM `framework_control_mappings` m_vis
+                INNER JOIN `frameworks` f_vis ON m_vis.framework = f_vis.value AND f_vis.status = 1
+            WHERE m_vis.control_id = {$control_alias}.id
+                AND {$leaf_sql}
+        )
+    )";
+}
+
+/******************************************************************
+ * FUNCTION: BUILD FRAMEWORK CONTROLS DATATABLE FILTER SQL        *
+ ******************************************************************/
+function build_framework_controls_datatable_filter_sql($filters, &$bind_params)
+{
+    if (isset($filters['control_framework']) && is_array($filters['control_framework'])) {
+        $original_framework_filter = $filters['control_framework'];
+        $include_unassigned = in_array(-1, array_map('intval', $original_framework_filter), true)
+            || in_array('-1', $original_framework_filter, true);
+        $had_framework_selection = !empty(array_filter(array_map('intval', $original_framework_filter), function ($id) {
+            return $id > 0;
+        }));
+        $expanded_framework_ids = expand_framework_filter_ids($original_framework_filter);
+
+        if ($had_framework_selection && empty($expanded_framework_ids) && !$include_unassigned) {
+            $filters['control_framework'] = [0];
+        } else {
+            $filters['control_framework'] = $expanded_framework_ids;
+            if ($include_unassigned) {
+                $filters['control_framework'][] = -1;
+            }
+        }
+    }
+
+    $visibility_sql = framework_controls_active_framework_visibility_sql('t1');
+    $sql = "
+        FROM `framework_controls` t1
+            LEFT JOIN `framework_control_mappings` m on t1.id=m.control_id
+            LEFT JOIN `frameworks` f on m.framework=f.value AND f.status=1
+            LEFT JOIN `control_class` t2 on t1.control_class=t2.value
+            LEFT JOIN `control_phase` t3 on t1.control_phase=t3.value
+            LEFT JOIN `control_priority` t4 on t1.control_priority=t4.value
+            LEFT JOIN `family` t5 on t1.family=t5.value
+            LEFT JOIN `user` t6 on t1.control_owner=t6.value
+            LEFT JOIN `control_maturity` t7 on t1.control_maturity=t7.value
+            LEFT JOIN `control_maturity` t8 on t1.desired_maturity=t8.value
+            LEFT JOIN `framework_control_type_mappings` t9 on t1.id=t9.control_id
+            LEFT JOIN `control_type` ctype on ctype.value=t9.control_type_id
+        WHERE t1.deleted=0
+            AND {$visibility_sql}
+    ";
+
+    framework_controls_datatable_append_multiselect_filter(
+        $sql,
+        $filters['control_class'] ?? 'all',
+        "(t2.value is NULL OR t2.value='')",
+        [],
+        "FIND_IN_SET(t2.value, '%s')"
+    );
+
+    framework_controls_datatable_append_multiselect_filter(
+        $sql,
+        $filters['control_phase'] ?? 'all',
+        "(t3.value is NULL OR t3.value='')",
+        [],
+        "FIND_IN_SET(t3.value, '%s')"
+    );
+
+    framework_controls_datatable_append_multiselect_filter(
+        $sql,
+        $filters['control_priority'] ?? 'all',
+        "(t4.value is NULL OR t4.value='')",
+        [],
+        "FIND_IN_SET(t4.value, '%s')"
+    );
+
+    framework_controls_datatable_append_multiselect_filter(
+        $sql,
+        $filters['control_family'] ?? 'all',
+        "(t5.value is NULL OR t5.value='')",
+        [],
+        "t5.value IN (%s)"
+    );
+
+    framework_controls_datatable_append_multiselect_filter(
+        $sql,
+        $filters['control_owner'] ?? 'all',
+        "(t6.value is NULL OR t6.value='')",
+        [],
+        "FIND_IN_SET(t6.value, '%s')"
+    );
+
+    framework_controls_datatable_append_multiselect_filter(
+        $sql,
+        $filters['control_framework'] ?? 'all',
+        "m.control_id is NULL",
+        [],
+        "m.framework IN (%s)"
+    );
+
+    framework_controls_datatable_append_multiselect_filter(
+        $sql,
+        $filters['control_type'] ?? 'all',
+        "ctype.value is NULL",
+        [],
+        "FIND_IN_SET(ctype.value, '%s')"
+    );
+
+    $control_status = $filters['control_status'] ?? 'all';
+    if ($control_status === "all" || $control_status === null || $control_status === "" || (is_array($control_status) && empty($control_status))) {
+        $sql .= " AND 1 ";
+    } elseif (is_array($control_status)) {
+        $where = [0];
+        $where_ids = [];
+        foreach ($control_status as $val) {
+            $where_ids[] = (int)$val;
+        }
+        $where[] = "FIND_IN_SET(t1.control_status, '" . implode(",", $where_ids) . "')";
+        $sql .= " AND (" . implode(" OR ", $where) . ") ";
+    } else {
+        $sql .= " AND 0 ";
+    }
+
+    $control_text = isset($filters['control_text']) ? trim((string)$filters['control_text']) : '';
+    if ($control_text !== '') {
+        $sql .= "
+            AND (
+                t1.short_name LIKE :control_text
+                OR t1.long_name LIKE :control_text
+                OR t1.description LIKE :control_text
+                OR t1.supplemental_guidance LIKE :control_text
+                OR t1.control_number LIKE :control_text
+                OR CAST(t1.mitigation_percent AS CHAR) LIKE :control_text
+                OR t2.name LIKE :control_text
+                OR t3.name LIKE :control_text
+                OR t4.name LIKE :control_text
+                OR t5.name LIKE :control_text
+                OR t6.name LIKE :control_text
+                OR t7.name LIKE :control_text
+                OR t8.name LIKE :control_text
+                OR ctype.name LIKE :control_text
+                OR m.reference_name LIKE :control_text
+                OR m.reference_text LIKE :control_text
+                OR f.name LIKE :control_text
+                OR IF(t1.control_status = 1, 'Pass', 'Fail') LIKE :control_text
+                OR EXISTS (
+                    SELECT 1
+                    FROM control_to_assets c2a
+                        LEFT JOIN control_maturity cm ON cm.value = c2a.control_maturity
+                        LEFT JOIN assets a ON a.id = c2a.asset_id
+                    WHERE c2a.control_id = t1.id
+                        AND (cm.name LIKE :control_text OR a.name LIKE :control_text)
+                )
+                OR EXISTS (
+                    SELECT 1
+                    FROM control_to_asset_groups c2ag
+                        LEFT JOIN control_maturity cm ON cm.value = c2ag.control_maturity
+                        LEFT JOIN asset_groups ag ON ag.id = c2ag.asset_group_id
+                    WHERE c2ag.control_id = t1.id
+                        AND (cm.name LIKE :control_text OR ag.name LIKE :control_text)
+                )
+            )
+        ";
+        $bind_params[':control_text'] = '%' . $control_text . '%';
+    }
+
+    return $sql;
+}
+
+/******************************************************************
+ * FUNCTION: CHECK FOR ACTIVE GOVERNANCE CONTROLS DATATABLE FILTER *
+ ******************************************************************/
+function framework_controls_datatable_has_active_filters($filters)
+{
+    if (trim((string)($filters['control_text'] ?? '')) !== '') {
+        return true;
+    }
+
+    foreach (['control_class', 'control_phase', 'control_family', 'control_owner', 'control_framework', 'control_priority', 'control_type'] as $key) {
+        $value = $filters[$key] ?? 'all';
+        if (is_array($value)) {
+            if (!empty($value)) {
+                return true;
+            }
+            continue;
+        }
+        if ($value !== 'all' && $value !== null && $value !== '') {
+            return true;
+        }
+    }
+
+    $control_status = $filters['control_status'] ?? 'all';
+    if (is_array($control_status) && count($control_status) === 1) {
+        return true;
+    }
+
+    return false;
+}
+
+/******************************************************************
+ * FUNCTION: BUILD GOVERNANCE CONTROLS DETAIL QUERY SQL           *
+ ******************************************************************/
+function build_framework_controls_datatable_detail_sql($control_id_list)
+{
+    return "
+        SELECT
+            t1.*,
+            GROUP_CONCAT(DISTINCT f.value) framework_ids,
+            GROUP_CONCAT(DISTINCT f.name) framework_names,
+            t2.name control_class_name,
+            t3.name control_phase_name,
+            t4.name control_priority_name,
+            t5.name family_short_name,
+            t6.name control_owner_name,
+            t7.name control_maturity_name,
+            t8.name desired_maturity_name,
+            GROUP_CONCAT(DISTINCT ctype.value) control_type_ids,
+            GROUP_CONCAT(DISTINCT ctype.name) control_type_names,
+            IF(t1.control_status = 1, 'Pass', 'Fail') control_status_name,
+            GROUP_CONCAT(DISTINCT m.reference_name) reference_name,
+            GROUP_CONCAT(DISTINCT m.reference_text) reference_text
+        FROM `framework_controls` t1
+            LEFT JOIN `framework_control_mappings` m on t1.id=m.control_id
+            LEFT JOIN `frameworks` f on m.framework=f.value AND f.status=1
+            LEFT JOIN `control_class` t2 on t1.control_class=t2.value
+            LEFT JOIN `control_phase` t3 on t1.control_phase=t3.value
+            LEFT JOIN `control_priority` t4 on t1.control_priority=t4.value
+            LEFT JOIN `family` t5 on t1.family=t5.value
+            LEFT JOIN `user` t6 on t1.control_owner=t6.value
+            LEFT JOIN `control_maturity` t7 on t1.control_maturity=t7.value
+            LEFT JOIN `control_maturity` t8 on t1.desired_maturity=t8.value
+            LEFT JOIN `framework_control_type_mappings` t9 on t1.id=t9.control_id
+            LEFT JOIN `control_type` ctype on ctype.value=t9.control_type_id
+        WHERE t1.id IN ({$control_id_list})
+        GROUP BY t1.id
+        ORDER BY t1.id
+    ";
+}
+
+/******************************************************************
+ * FUNCTION: RENDER GOVERNANCE CONTROL MAPPING FRAMEWORK VIEW     *
+ ******************************************************************/
+function render_governance_control_mapping_framework_view($control_id, $mapping_count, $panel_name = "bottom")
+{
+    global $lang, $escaper;
+
+    if ($panel_name == "top" || $panel_name == "bottom") {
+        $span1 = "col-2";
+        $span2 = "col-10";
+    } else {
+        $span1 = "col-4";
+        $span2 = "col-8";
+    }
+
+    $control_id = (int)$control_id;
+    $collapse_id = "mapped-frameworks-collapse-" . $control_id;
+    $table_id = "mapped-frameworks-table-" . $control_id;
+    $framework_count = (int)($mapping_count['frameworks'] ?? 0);
+    $controls_count = (int)($mapping_count['controls'] ?? 0);
+
+    return "
+        <div class='mb-2'>
+            <div class='row {$panel_name} cursor-pointer' role='button' data-bs-toggle='collapse' data-bs-target='#{$collapse_id}' data-control-id='{$control_id}'>
+                <div class='{$span1} text-right'><label class='cursor-pointer'>{$escaper->escapeHtml($lang['MappedControlFrameworks'])} : </label></div>
+                <div class='{$span2}'>
+                    <span class='badge bg-secondary me-3 mapped-count'>{$escaper->escapeHtml($lang['Frameworks'])}: {$framework_count} | {$escaper->escapeHtml($lang['Controls'])}: {$controls_count}</span>
+                    <i class='fa fa-chevron-right collapse-caret'></i>
+                </div>
+            </div>
+            <div id='{$collapse_id}' class='collapse mt-2'>
+                <div class='bg-light border p-3'>
+                    <div class='text-muted loading-placeholder'>
+                        Loading mapped frameworks…
+                    </div>
+                    <table id='{$table_id}' class='table table-bordered table-striped table-sm d-none mb-0' width='100%'>
+                        <thead>
+                            <tr>
+                                <th>{$escaper->escapeHtml($lang['Framework'])}</th>
+                                <th>{$escaper->escapeHtml($lang['Control'])}</th>
+                                <th>{$escaper->escapeHtml($lang['ReferenceText'])}</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    ";
+}
+
+/******************************************************************
+ * FUNCTION: RENDER GOVERNANCE CONTROL MAPPING ASSET VIEW         *
+ ******************************************************************/
+function render_governance_control_mapping_asset_view($mapped_assets, $panel_name = "bottom")
+{
+    global $lang, $escaper;
+
+    $html = "
+        <div class='mb-2'>
+            <label>{$escaper->escapeHtml($lang['MappedAssets'])} : </label>
+            <div class='bg-light border p-3'>
+                <table width='100%' class='table table-bordered mb-0'>
+                    <tr>
+                        <th width='45%'>{$escaper->escapeHtml($lang['CurrentMaturity'])}</th>
+                        <th width='55%'>{$escaper->escapeHtml($lang['Asset'])}</th>
+                    </tr>
+    ";
+
+    foreach ($mapped_assets as $assets) {
+        $asset_names = [];
+        if ($assets['asset_name']) {
+            $asset_names[] = $escaper->escapeHtml($assets['asset_name']);
+        }
+        if ($assets['asset_group_name']) {
+            $asset_names[] = "<b>" . $escaper->escapeHtml($assets['asset_group_name']) . "</b>";
+        }
+
+        $html .= "
+                    <tr>
+                        <td>{$escaper->escapeHtml($assets['control_maturity_name'])}</td>
+                        <td>" . implode(",", $asset_names) . "</td>
+                    </tr>
+        ";
+    }
+
+    $html .= "
+                </table>
+            </div>
+        </div>
+    ";
+
+    return $html;
+}
+
+/******************************************************************
+ * FUNCTION: RENDER GOVERNANCE CONTROL DATATABLE CARD             *
+ ******************************************************************/
+function render_governance_control_datatable_card($control, $active_fields, $mapping_count, $mapped_assets)
+{
+    global $lang, $escaper;
+
+    $edit = "<a href='#' class='btn btn-success ms-1 control-block--edit' title='{$escaper->escapeHtml($lang['Edit'])}' data-id='{$escaper->escapeHtml($control['id'])}'><i class='fa fa-edit'></i></a>";
+    if (empty($_SESSION['add_new_controls'])) {
+        $clone = "";
+    } else {
+        $clone = "<a href='#' class='btn btn-submit ms-1 control-block--clone' title='{$escaper->escapeHtml($lang['Clone'])}' data-id='{$escaper->escapeHtml($control['id'])}'><i class='fa fa-clone'></i></a>";
+    }
+    $delete = "<a href='' class='btn btn-primary control-block--delete' title='{$escaper->escapeHtml($lang['Delete'])}' data-id='{$escaper->escapeHtml($control['id'])}'><i class='fa fa-trash'></i></a>";
+
+    $html = "
+        <div class='control-block item-block clearfix'>
+            <div class='control-block--header clearfix' data-project='' style='padding: 1.25rem;'>
+                <div class='row mb-2'>
+                    <div class='col-sm-12 col-md-8 checkbox-in-div'>
+                        <input type='checkbox' name='control_ids[]' value='{$escaper->escapeHtml($control['id'])}' class='form-check-input'>
+                        <span>This control is marked for deletion</span>
+                    </div>
+                    <div class='col-sm-12 col-md-4 text-end control-block--row'>
+                        {$delete}{$clone}{$edit}
+                    </div>
+                </div>
+                <div class='control-block--row control-content pb-0'>
+    ";
+
+    if (customization_extra()) {
+        $html .= "
+                    <div class='row'>
+                        <div class='col-12 top-panel'>" .
+                            display_detail_control_fields_view('top', $active_fields, $control) . "
+                        </div>
+                    </div>
+                    <div class='row'>
+                        <div class='col-6 left-panel'>" .
+                            display_detail_control_fields_view('left', $active_fields, $control) . "
+                        </div>
+                        <div class='col-6 right-panel'>" .
+                            display_detail_control_fields_view('right', $active_fields, $control) . "
+                        </div>
+                    </div>
+                    <div class='row'>
+                        <div class='col-12 bottom-panel'>" .
+                            display_detail_control_fields_view('bottom', $active_fields, $control) . "
+                        </div>
+                    </div>
+        ";
+    } else {
+        $html .= "
+                    <div class='row'>
+                        <div class='col-12 top-panel'>" .
+                            display_control_id_view($control['id'], 'top') .
+                            display_control_name_view($control['short_name'], 'top') .
+                            display_control_longname_view($control['long_name'], 'top') .
+                            display_control_number_view2($control['control_number'], 'top') . "
+                        </div>
+                    </div>
+                    <div class='row'>
+                        <div class='col-6 left-panel'>" .
+                            display_control_owner_view($control['control_owner_name'], 'left') .
+                            display_control_priority_view($control['control_priority_name'], 'left') .
+                            display_current_maturity_view($control['control_maturity_name'], 'left') .
+                            display_desired_maturity_view($control['desired_maturity_name'], 'left') .
+                            display_control_class_view($control['control_class_name'], 'left') . "
+                        </div>
+                        <div class='col-6 right-panel'>" .
+                            display_control_phase_view($control['control_phase_name'], 'right') .
+                            display_control_family_view($control['family_short_name'], 'right') .
+                            display_control_mitigation_percent_view($control['mitigation_percent'], 'right') .
+                            display_control_type_view($control['control_type_ids'], 'right') .
+                            display_control_status_view($control['control_status'], 'right') . "
+                        </div>
+                    </div>
+                    <div class='row'>
+                        <div class='col-12 bottom-panel'>" .
+                            display_control_description_view($control['description'], 'bottom') .
+                            display_supplemental_guidance_view($control['supplemental_guidance'], 'bottom') .
+                            render_governance_control_mapping_framework_view($control['id'], $mapping_count, 'bottom') .
+                            render_governance_control_mapping_asset_view($mapped_assets, 'bottom') . "
+                        </div>
+                    </div>
+        ";
+    }
+
+    $html .= "
+                </div>
+            </div>
+        </div>
+    ";
+
+    return $html;
+}
+
+/******************************************************************
+ * FUNCTION: GET FRAMEWORK CONTROLS DATATABLE DATA                *
+ ******************************************************************/
+function get_framework_controls_datatable_data($filters, $start = 0, $length = 10, $active_fields = [])
+{
+    require_once(realpath(__DIR__ . '/assets.php'));
+
+    $bind_params = [];
+    $db = db_open();
+
+    if (!framework_controls_datatable_has_active_filters($filters)) {
+        $visibility_sql = framework_controls_active_framework_visibility_sql('t1');
+        $records_filtered = (int)$db->query("
+            SELECT COUNT(*)
+            FROM `framework_controls` t1
+            WHERE t1.deleted=0
+                AND {$visibility_sql}
+        ")->fetchColumn();
+
+        $id_sql = "
+            SELECT t1.id
+            FROM `framework_controls` t1
+            WHERE t1.deleted=0
+                AND {$visibility_sql}
+            ORDER BY t1.id
+        ";
+        if ($length !== -1) {
+            $id_sql .= " LIMIT :start, :length ";
+        }
+
+        $stmt = $db->prepare($id_sql);
+        if ($length !== -1) {
+            $stmt->bindValue(':start', (int)$start, PDO::PARAM_INT);
+            $stmt->bindValue(':length', (int)$length, PDO::PARAM_INT);
+        }
+        $stmt->execute();
+        $control_ids = array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
+    } else {
+        $filter_sql = build_framework_controls_datatable_filter_sql($filters, $bind_params);
+
+        $count_sql = "SELECT COUNT(DISTINCT t1.id) {$filter_sql}";
+        $stmt = $db->prepare($count_sql);
+        foreach ($bind_params as $param => $value) {
+            $stmt->bindValue($param, $value, PDO::PARAM_STR);
+        }
+        $stmt->execute();
+        $records_filtered = (int)$stmt->fetchColumn();
+
+        $id_sql = "
+            SELECT DISTINCT t1.id
+            {$filter_sql}
+            ORDER BY t1.id
+        ";
+        if ($length !== -1) {
+            $id_sql .= " LIMIT :start, :length ";
+        }
+
+        $stmt = $db->prepare($id_sql);
+        foreach ($bind_params as $param => $value) {
+            $stmt->bindValue($param, $value, PDO::PARAM_STR);
+        }
+        if ($length !== -1) {
+            $stmt->bindValue(':start', (int)$start, PDO::PARAM_INT);
+            $stmt->bindValue(':length', (int)$length, PDO::PARAM_INT);
+        }
+        $stmt->execute();
+        $control_ids = array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
+    }
+
+    if (empty($control_ids)) {
+        db_close($db);
+        return [
+            'data' => [],
+            'recordsTotal' => get_framework_controls_count(),
+            'recordsFiltered' => $records_filtered,
+            'classList' => getAvailableControlClassList($filters['control_framework'] ?? 'all'),
+            'phaseList' => getAvailableControlPhaseList($filters['control_framework'] ?? 'all'),
+            'familyList' => getAvailableControlFamilyList($filters['control_framework'] ?? 'all'),
+            'ownerList' => getAvailableControlOwnerList($filters['control_framework'] ?? 'all'),
+            'priorityList' => getAvailableControlPriorityList($filters['control_framework'] ?? 'all'),
+        ];
+    }
+
+    $control_id_list = implode(',', $control_ids);
+    $stmt = $db->prepare(build_framework_controls_datatable_detail_sql($control_id_list));
+    $stmt->execute();
+    $controls = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    $frameworks = get_frameworks(1);
+    foreach ($controls as &$control) {
+        $framework_ids = explode(",", (string)$control['framework_ids']);
+        $decrypted_framework_names = [];
+        foreach ($framework_ids as $framework_id) {
+            if (!empty($frameworks[$framework_id]['name'])) {
+                $decrypted_framework_names[] = $frameworks[$framework_id]['name'];
+            }
+        }
+        $control['framework_names'] = implode(", ", $decrypted_framework_names);
+    }
+    unset($control);
+
+    $mapping_counts = [];
+    $stmt = $db->prepare("
+        SELECT
+            control_id,
+            COUNT(DISTINCT framework) AS frameworks,
+            COUNT(DISTINCT reference_name) AS controls
+        FROM `framework_control_mappings`
+        WHERE control_id IN ({$control_id_list})
+        GROUP BY control_id
+    ");
+    $stmt->execute();
+    foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        $mapping_counts[(int)$row['control_id']] = [
+            'frameworks' => (int)$row['frameworks'],
+            'controls' => (int)$row['controls'],
+        ];
+    }
+
+    db_close($db);
+
+    $assets_by_control = get_control_to_assets_for_controls($control_ids);
+
+    $controls_by_id = [];
+    foreach ($controls as $control) {
+        $controls_by_id[(int)$control['id']] = $control;
+    }
+
+    $data = [];
+    foreach ($control_ids as $control_id) {
+        if (!isset($controls_by_id[$control_id])) {
+            continue;
+        }
+        $control = $controls_by_id[$control_id];
+        $mapping_count = $mapping_counts[$control_id] ?? ['frameworks' => 0, 'controls' => 0];
+        $mapped_assets = $assets_by_control[$control_id] ?? [];
+        $data[] = [
+            render_governance_control_datatable_card($control, $active_fields, $mapping_count, $mapped_assets),
+        ];
+    }
+
+    $control_framework = $filters['control_framework'] ?? 'all';
+
+    return [
+        'data' => $data,
+        'recordsTotal' => get_framework_controls_count(),
+        'recordsFiltered' => $records_filtered,
+        'classList' => getAvailableControlClassList($control_framework),
+        'phaseList' => getAvailableControlPhaseList($control_framework),
+        'familyList' => getAvailableControlFamilyList($control_framework),
+        'ownerList' => getAvailableControlOwnerList($control_framework),
+        'priorityList' => getAvailableControlPriorityList($control_framework),
+    ];
 }
 
 /************************************
@@ -1671,7 +2380,7 @@ function getAvailableControlClassList($control_framework=""){
         $sql .= " AND (". implode(" OR ", $where) . ")";
 
     } else{
-        $sql .= " AND 1 ";
+        $sql .= " AND " . framework_controls_active_framework_visibility_sql('t1');
     }
     $sql .= "
         GROUP BY
@@ -1726,7 +2435,7 @@ function getAvailableControlPhaseList($control_framework=""){
         $sql .= " AND (". implode(" OR ", $where) . ")";
 
     } else{
-        $sql .= " AND 1 ";
+        $sql .= " AND " . framework_controls_active_framework_visibility_sql('t1');
     }
     $sql .= "
         GROUP BY
@@ -1780,7 +2489,7 @@ function getAvailableControlOwnerList($control_framework=""){
         $sql .= " AND (". implode(" OR ", $where) . ")";
 
     } else{
-        $sql .= " AND 1 ";
+        $sql .= " AND " . framework_controls_active_framework_visibility_sql('t1');
     }
     $sql .= "
         GROUP BY
@@ -1834,7 +2543,7 @@ function getAvailableControlFamilyList($control_framework=""){
         $sql .= " AND (". implode(" OR ", $where) . ")";
 
     } else{
-        $sql .= " AND 1 ";
+        $sql .= " AND " . framework_controls_active_framework_visibility_sql('t1');
     }
     $sql .= "
         GROUP BY
@@ -1858,53 +2567,38 @@ function getAvailableControlFamilyList($control_framework=""){
 function getAvailableControlFrameworkList($alphabetical_order=false){
     // Open the database connection
     $db = db_open();
-    
+
+    $leaf_sql = framework_is_leaf_framework_sql('t1');
+    $visibility_sql = framework_controls_active_framework_visibility_sql('fc');
+
     $sql = "
-        SELECT t1.*
+        SELECT DISTINCT t1.value, t1.name
         FROM `frameworks` t1
-            LEFT JOIN `framework_control_mappings` m ON m.framework=t1.value
-            LEFT JOIN `framework_controls` t2 ON m.control_id=t2.id AND t2.deleted=0
-        WHERE t1.`status`=1 
-        GROUP BY t1.value
-        ;
+            INNER JOIN `framework_control_mappings` m ON m.framework = t1.value
+            INNER JOIN `framework_controls` fc ON m.control_id = fc.id AND fc.deleted = 0
+        WHERE t1.`status` = 1
+            AND {$leaf_sql}
+            AND {$visibility_sql}
     ";
 
-    // Get available framework list
     $stmt = $db->prepare($sql);
-    
     $stmt->execute();
+    $frameworks = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    $frameworks = $stmt->fetchAll();
-    
-    // Try decrypt
-//    foreach($results as &$result){
-//        $result['name'] = try_decrypt($result['name']);
-//        $result['description'] = try_decrypt($result['description']);
-//    }
-    
-    // Close the database connection
     db_close($db);
-    
-    $all_frameworks = get_frameworks(1);
-    $all_parent_frameworks = array();
 
-    foreach($frameworks as $framework)
-    {
-        $parent_frameworks = array();
-        get_parent_frameworks($all_frameworks, $framework['value'], $parent_frameworks);
-        $all_parent_frameworks = array_merge($all_parent_frameworks, $parent_frameworks);
+    $results = [];
+    foreach ($frameworks as $framework) {
+        $results[] = [
+            'value' => $framework['value'],
+            'name' => try_decrypt($framework['name']),
+        ];
     }
 
-    $results = array();
-    $ids = array();
-    if($alphabetical_order == true) usort($all_parent_frameworks, function($a, $b){return strcmp($a["name"], $b["name"]);});
-    // Get unique array
-    foreach($all_parent_frameworks as $result){
-        if(!in_array($result['value'], $ids))
-        {
-            $results[] = $result;
-            $ids[] = $result['value'];
-        }
+    if ($alphabetical_order) {
+        usort($results, function ($a, $b) {
+            return strcmp($a['name'], $b['name']);
+        });
     }
 
     return $results;
@@ -2067,7 +2761,7 @@ function getAvailableControlPriorityList($control_framework=""){
         $sql .= " AND (". implode(" OR ", $where) . ")";
 
     } else{
-        $sql .= " AND 1 ";
+        $sql .= " AND " . framework_controls_active_framework_visibility_sql('t1');
     }
     $sql .= "
         GROUP BY
@@ -2218,7 +2912,7 @@ function get_documents($type="")
         'team_separation_extra',
         __DIR__ . '/../extras/separation/index.php',
         'get_user_teams_query_for_documents',
-        ['t1'],
+        ['t1', true],
         ' WHERE 1'
     );
     if($type) {
@@ -2753,17 +3447,38 @@ function get_documents_as_treegrid($type){
     $filterRules = isset($_GET["filterRules"])?json_decode($_GET["filterRules"],true):array();
     $filtered_documents = array();
     $documents = get_documents($type);
+
+    $all_control_ids = [];
+    foreach ($documents as $document) {
+        foreach (explode(",", $document["control_ids"] ?? "") as $control_id) {
+            $control_id = (int)trim($control_id);
+            if ($control_id) {
+                $all_control_ids[$control_id] = $control_id;
+            }
+        }
+    }
+
+    $controls_by_id = [];
+    if (!empty($all_control_ids)) {
+        foreach (get_framework_controls(array_values($all_control_ids)) as $control) {
+            $controls_by_id[(int)$control['id']] = $control;
+        }
+    }
+
     foreach($documents as &$document){
         $frameworks = get_frameworks_by_ids($document["framework_ids"] ?? "");
         $framework_names = implode(", ", array_map(function($framework){
             return $framework['name'];
         }, $frameworks));
 
-        $control_ids = explode(",", $document["control_ids"] ?? "");
-        $controls = get_framework_controls_by_filter("all", "all", "all", "all", "all", "all", "all", "all", "", $control_ids);
-        $control_names = implode(", ", array_map(function($control){
-            return $control['short_name'];
-        }, $controls));
+        $control_names_arr = [];
+        foreach (explode(",", $document["control_ids"] ?? "") as $control_id) {
+            $control_id = (int)trim($control_id);
+            if ($control_id && !empty($controls_by_id[$control_id]['short_name'])) {
+                $control_names_arr[] = $controls_by_id[$control_id]['short_name'];
+            }
+        }
+        $control_names = implode(", ", $control_names_arr);
 
         // document filtering
         if(count($filterRules)>0) {
@@ -4761,7 +5476,7 @@ function display_detail_control_fields_view($panel_name, $fields, $control) {
     foreach ($fields as $field) {
 
         // Check if this field is main field and details in left panel
-        if ($field['panel_name'] == $panel_name && $field['tab_index'] == 2) {
+        if ($field['panel_name'] == $panel_name && $field['tab_index'] == 1) {
 
             if ($field['is_basic'] == 1) {
 
@@ -5026,7 +5741,7 @@ function display_control_owner_view($control_owner_name, $panel_name="") {
 /**********************************************
 * FUNCTION: DISPLAY CONTROL MAPPING FRAMEWORK *
 ***********************************************/
-function display_mapping_framework_view($control_id, $panel_name="") {
+function display_mapping_framework_view($control_id, $panel_name="", $mapping_counts=null) {
 
     global $lang, $escaper;
 
@@ -5042,7 +5757,15 @@ function display_mapping_framework_view($control_id, $panel_name="") {
     $table_id    = "mapped-frameworks-table-" . (int)$control_id;
 
     // Get the count of mapped frameworks
-    $count = get_control_framework_mappings_counts($control_id);
+    if ($mapping_counts === null) {
+        $count = get_control_framework_mappings_counts($control_id);
+    } else {
+        $count = [
+            'control_id' => (int)$control_id,
+            'frameworks' => (int)($mapping_counts['frameworks'] ?? 0),
+            'controls' => (int)($mapping_counts['controls'] ?? 0),
+        ];
+    }
 
     return "
         <div class='mb-2'>
@@ -5101,6 +5824,41 @@ function get_control_framework_mappings_counts($control_id)
         'frameworks' => (int) $result['frameworks'],
         'controls' => (int) $result['controls']
     ];
+}
+
+/*******************************************************
+ * FUNCTION: GET CONTROL FRAMEWORK MAPPINGS COUNT BATCH *
+ *******************************************************/
+function get_control_framework_mappings_counts_batch(array $control_ids)
+{
+    $control_ids = array_values(array_filter(array_map('intval', $control_ids)));
+    if (empty($control_ids)) {
+        return [];
+    }
+
+    $id_list = implode(',', $control_ids);
+    $db = db_open();
+    $stmt = $db->prepare("
+        SELECT
+            control_id,
+            COUNT(DISTINCT framework) AS frameworks,
+            COUNT(DISTINCT reference_name) AS controls
+        FROM `framework_control_mappings`
+        WHERE control_id IN ({$id_list})
+        GROUP BY control_id
+    ");
+    $stmt->execute();
+
+    $counts_by_control = [];
+    foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        $counts_by_control[(int)$row['control_id']] = [
+            'frameworks' => (int)$row['frameworks'],
+            'controls' => (int)$row['controls'],
+        ];
+    }
+
+    db_close($db);
+    return $counts_by_control;
 }
 
 /******************************************
@@ -5571,30 +6329,46 @@ function get_document_to_control_mappings($document_id, $refresh = false)
         }
         unset($docVector, $controlVectors); // free memory
 
-        // Update database with scores
+        // Update database with scores (batched inserts)
+        $insert_rows = [];
         foreach ($validControlIds as $control_id) {
             $tfidf_similarity = $tfIdfScores[$control_id];
             $keyword_match = $keywordMatches[$control_id];
             $normalized_keyword_score = $maxKeywordMatch > 0 ? $keyword_match / $maxKeywordMatch : 0;
             $final_score = ($tfidf_similarity + $normalized_keyword_score) / 2;
 
+            $insert_rows[] = [
+                'document_id' => $document_id,
+                'control_id' => $control_id,
+                'score' => $final_score,
+                'tfidf_similarity' => $tfidf_similarity,
+                'keyword_match' => $keyword_match,
+            ];
+        }
+
+        foreach (array_chunk($insert_rows, 100) as $chunk) {
+            $values_sql = [];
+            $params = [];
+            foreach ($chunk as $index => $row) {
+                $values_sql[] = "(:document_id_{$index}, :control_id_{$index}, :score_{$index}, :tfidf_similarity_{$index}, :keyword_match_{$index})";
+                $params[":document_id_{$index}"] = $row['document_id'];
+                $params[":control_id_{$index}"] = $row['control_id'];
+                $params[":score_{$index}"] = $row['score'];
+                $params[":tfidf_similarity_{$index}"] = $row['tfidf_similarity'];
+                $params[":keyword_match_{$index}"] = $row['keyword_match'];
+            }
+
             $stmt = $db->prepare("
                 INSERT INTO document_control_mappings
                     (document_id, control_id, score, tfidf_similarity, keyword_match)
-                VALUES
-                    (:document_id, :control_id, :score, :tfidf_similarity, :keyword_match)
+                VALUES " . implode(', ', $values_sql) . "
                 ON DUPLICATE KEY UPDATE
-                    score = :score, tfidf_similarity = :tfidf_similarity, 
-                    keyword_match = :keyword_match, timestamp = NOW()
+                    score = VALUES(score),
+                    tfidf_similarity = VALUES(tfidf_similarity),
+                    keyword_match = VALUES(keyword_match),
+                    timestamp = NOW()
             ");
-
-            $stmt->execute([
-                ':document_id' => $document_id,
-                ':control_id' => $control_id,
-                ':score' => $final_score,
-                ':tfidf_similarity' => $tfidf_similarity,
-                ':keyword_match' => $keyword_match
-            ]);
+            $stmt->execute($params);
         }
 
         // Fetch updated mappings

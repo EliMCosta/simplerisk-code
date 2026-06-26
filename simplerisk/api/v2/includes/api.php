@@ -86,6 +86,11 @@ function api_v2_is_authenticated()
     // If we are not authenticated with a key but have an authenticated session
     else if (is_session_authenticated())
     {
+        // JSON-RPC (MCP) auth seeds a session cookie but marks it MCP-only so
+        // non-admin keys cannot fall through to REST without X-API-KEY.
+        if (function_exists('api_session_blocks_rest_auth') && api_session_blocks_rest_auth()) {
+            return false;
+        }
         // Return true
         return true;
     }

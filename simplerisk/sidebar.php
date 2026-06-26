@@ -79,6 +79,19 @@ require_once(realpath(__DIR__ .'/header.php'));
                                 <span class="hide-menu"><?= $escaper->escapeHtml($lang['ReviewRisksRegularly']);?></span>
                             </a>
                         </li>
+    <?php
+        // Import-Export Extra (user-facing page): shown to any user with risk
+        // access when the extra is enabled. The page itself is login-only.
+        if (import_export_extra() && (is_admin() || check_permission("riskmanagement") || check_permission("submit_risks"))) {
+    ?>
+                        <li class="sidebar-item <?= ($active_sidebar_submenu == 'ImportExport')?'active':''; ?>">
+                            <a href="../extras/importexport.php" class="sidebar-link">
+                                <span class="hide-menu"><?= $escaper->escapeHtml($lang['ImportExport'] ?? 'Import / Export');?></span>
+                            </a>
+                        </li>
+    <?php
+        }
+    ?>
                     </ul>
                 </li>
                 <li class="sidebar-item <?= ($active_sidebar_menu =="Compliance")?'selected':''; ?>">
@@ -216,27 +229,6 @@ require_once(realpath(__DIR__ .'/header.php'));
             // the Settings / Add and Remove Values / Playbooks / Notifications
             // tabs inline.
     ?>
-                    </ul>
-                </li>
-    <?php
-        }
-        if (check_permission("ai_access")) {
-    ?>
-                <li class="sidebar-item <?= ($active_sidebar_menu =="ArtificialIntelligence")?'selected':''; ?>">
-                    <a class="sidebar-link has-arrow waves-effect waves-dark <?= ($active_sidebar_menu =='ArtificialIntelligence')?'active':''; ?>" href="javascript:void(0)" aria-expanded="false">
-                        <span class="hide-menu"><?= $escaper->escapeHtml($lang['ArtificialIntelligence']);?></span>
-                    </a>
-                    <ul aria-expanded="false" class="collapse first-level <?= ($active_sidebar_menu =='Recommendations')?'in':''; ?>">
-                        <li class="sidebar-item <?= ($active_sidebar_submenu =='Recommendations')?'active':''; ?>">
-                            <a href="../artificial_intelligence/index.php" class="sidebar-link">
-                                <span class="hide-menu"><?= $escaper->escapeHtml($lang['Recommendations']);?></span>
-                            </a>
-                        </li>
-                        <li class="sidebar-item <?= ($active_sidebar_submenu =='DocumentInstallation')?'active':''; ?>">
-                            <a href="../artificial_intelligence/documentation.php" class="sidebar-link">
-                                <span class="hide-menu"><?= $escaper->escapeHtml($lang['DocumentInstallation']);?></span>
-                            </a>
-                        </li>
                     </ul>
                 </li>
     <?php

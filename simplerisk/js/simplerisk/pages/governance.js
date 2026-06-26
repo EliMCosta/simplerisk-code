@@ -653,6 +653,29 @@ jQuery(document).ready(function($){
     };
 
     controlObject.init();
+
+    /**
+     * When every option in a multiselect is selected, treat it as no filter so
+     * the server can use the fast unfiltered query path.
+     */
+    function governanceControlsFilterValue(selector) {
+        var $select = $(selector);
+        if (!$select.length) {
+            return [];
+        }
+
+        var selected = $select.val() || [];
+        if (!selected.length) {
+            return selected;
+        }
+
+        var optionCount = $select.find('option').length;
+        if (optionCount > 0 && selected.length >= optionCount) {
+            return [];
+        }
+
+        return selected;
+    }
   
     // Initiate Datatable of controls
     var pageLength = 10;
@@ -664,14 +687,14 @@ jQuery(document).ready(function($){
                 url: BASE_URL + '/api/v2/datatable/framework_controls',
                 type: "POST",
                 data: function (d) {
-                    d.control_class = $("#filter_by_control_class").val();
-                    d.control_phase = $("#filter_by_control_phase").val();
-                    d.control_family = $("#filter_by_control_family").val();
-                    d.control_owner = $("#filter_by_control_owner").val();
-                    d.control_framework = $("#filter_by_control_framework").val();
-                    d.control_priority = $("#filter_by_control_priority").val();
-                    d.control_type = $("#filter_by_control_type").val();
-                    d.control_status = $("#filter_by_control_status").val();
+                    d.control_class = governanceControlsFilterValue("#filter_by_control_class");
+                    d.control_phase = governanceControlsFilterValue("#filter_by_control_phase");
+                    d.control_family = governanceControlsFilterValue("#filter_by_control_family");
+                    d.control_owner = governanceControlsFilterValue("#filter_by_control_owner");
+                    d.control_framework = governanceControlsFilterValue("#filter_by_control_framework");
+                    d.control_priority = governanceControlsFilterValue("#filter_by_control_priority");
+                    d.control_type = governanceControlsFilterValue("#filter_by_control_type");
+                    d.control_status = governanceControlsFilterValue("#filter_by_control_status");
                     d.control_text = $("#filter_by_control_text").val();
                 },
                 error: function (xhr, status, error) {
