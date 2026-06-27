@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Host convenience wrapper: run the SimpleRisk test suite inside the running
+# simplerisk-app container (the suite is bind-mounted at /var/www/simplerisk/tests).
+# Usage (from repo root): bin/test [unit|integration|e2e|all] [--coverage]
+set -euo pipefail
+
+exec podman exec simplerisk-app /var/www/simplerisk/tests/bin/test "$@"

@@ -88,6 +88,12 @@ RUN docker-php-ext-configure gd --with-freetype --with-jpeg && \
         sysvsem \
         sysvshm
 
+# pcov: fast code-coverage driver for the test suite (`bin/test --coverage`).
+# Loaded but DISABLED by default so it never instruments the running web app or
+# normal test runs; tests/bin/phpunit enables it per-run via -d pcov.enabled=1.
+RUN pecl install pcov && docker-php-ext-enable pcov && \
+    echo 'pcov.enabled=0' > /usr/local/etc/php/conf.d/simplerisk-pcov.ini
+
 # Bind 80/443 without root and allow cron setgid, then drop the cap helper.
 RUN setcap CAP_NET_BIND_SERVICE=+eip /usr/sbin/apache2 && \
     chmod gu+s /usr/sbin/cron && \

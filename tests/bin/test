@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# Run the SimpleRisk suite (or one suite) from inside the tests dir.
+# Usage: bin/test [unit|integration|e2e|all] [--coverage]
+#   --coverage  enable pcov and emit an HTML report to tools/coverage/ (+ a text
+#               summary). Requires the pcov extension (image default, off until used).
+set -euo pipefail
+
+TESTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$TESTS_DIR"
+
+COVERAGE=0
+ARGS=()
+for arg in "$@"; do
+    case "$arg" in
+        --coverage) COVERAGE=1 ;;
+        *)          ARGS+=("$arg") ;;
+    esac
+done
+SUITE="${ARGS[0]:-all}"
+[ "$COVERAGE" = "1" ] && export SR_COVERAGE=1
+
+CMD=(./bin/phpunit --configuration phpunit.xml)
+if [ "$SUITE" != "all" ]; then
+    case "$SUITE" in
+        unit|integration|e2e) CMD+=(--testsuite "$SUITE") ;;
+        *) echo "Unknown suite '$SUITE'. Use: unit | integration | e2e | all [--coverage]" >&2; exit 2 ;;
+    esac
+fi
+# RegenEasyUiFixturesTest rewrites the committed golden fixtures on every run,
+# so it is opt-in (@group regen) and excluded from the normal suites. Refresh
+# the goldens explicitly with bin/regen-easyui-fixtures after a deliberate change.
+CMD+=(--exclude-group regen)
+if [ "$COVERAGE" = "1" ]; then
+    CMD+=(--coverage-html tools/coverage --coverage-text)
+fi
+
+exec "${CMD[@]}"

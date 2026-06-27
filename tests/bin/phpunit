@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# PHPUnit launcher. Ensures the PHPUnit 9.6 phar is present in tools/ (curl on
+# first run; the bind-mount persists it on the host across recreates), then runs
+# it. Intended to be exec'd INSIDE the simplerisk-app container.
+set -euo pipefail
+
+TESTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PHAR_VERSION="9.6.18"
+PHAR="$TESTS_DIR/tools/phpunit-${PHAR_VERSION}.phar"
+URL="https://phar.phpunit.de/phpunit-${PHAR_VERSION}.phar"
+
+if [ ! -f "$PHAR" ]; then
+    echo "Fetching PHPUnit ${PHAR_VERSION} phar -> $PHAR" >&2
+    if ! curl -fsSL "$URL" -o "$PHAR"; then
+        echo "Failed to download $URL" >&2
+        echo "(If the container has no outbound access, download it on the host into $PHAR — it is bind-mounted.)" >&2
+        exit 1
+    fi
+fi
+
+# When SR_COVERAGE=1, enable pcov for this run only (it is loaded but disabled
+# by default in the image). pcov is the fast coverage driver PHPUnit 9 detects.
+PHP_OPTS=()
+if [ "${SR_COVERAGE:-0}" = "1" ]; then
+    PHP_OPTS+=(-d pcov.enabled=1 -d pcov.directory=/var/www/simplerisk)
+fi
+
+exec php "${PHP_OPTS[@]}" "$PHAR" "$@"

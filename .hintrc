@@ -1,0 +1,20 @@
+{
+  "extends": ["development"],
+  "connector": {
+    "name": "local",
+    "options": {
+      "pattern": [
+        "**",
+        "!.git/**",
+        "!tests/tools/coverage/**",
+        "!tests/tools/.phpunit.cache/**"
+      ]
+    }
+  },
+  "ignoredUrls": [
+    {
+      "domain": "tests/tools/coverage",
+      "hints": ["*"]
+    }
+  ]
+}

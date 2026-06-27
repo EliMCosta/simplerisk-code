@@ -73,10 +73,12 @@ services:
     # Host bind mounts — keep runtime state out of the (rebuilt) image so it lives on host:
     #   ./extras → extras code is live-editable here; per-extra config.php + data/ persist.
     #   ./certs  → TLS material persists; entrypoint.sh generates it on first boot.
+    #   ./tests  → the PHPUnit test suite, live-editable like extras (run via bin/test).
     # :Z applies a private SELinux label (FC43 enforcing). Create ./certs before first up.
     volumes:
       - ./extras:/var/www/simplerisk/extras:Z
       - ./certs:/etc/apache2/ssl:Z
+      - ./tests:/var/www/simplerisk/tests:Z
     restart: unless-stopped
     # HTTP liveness on internal :80 (OCI image format does not support HEALTHCHECK).
     healthcheck:

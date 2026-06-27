@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SimpleRisk test suite. Run inside the simplerisk-app container via
+  tests/bin/test (or the repo-root bin/test host wrapper). Directories and the
+  bootstrap path resolve relative to this file.
+-->
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         bootstrap="bootstrap.php"
+         colors="true"
+         cacheResult="true"
+         cacheResultFile="tools/.phpunit.cache"
+         failOnRisky="true"
+         failOnWarning="true"
+         beStrictAboutTestsThatDoNotTestAnything="true">
+    <testsuites>
+        <testsuite name="unit">
+            <directory>unit</directory>
+        </testsuite>
+        <testsuite name="integration">
+            <directory>integration</directory>
+        </testsuite>
+        <testsuite name="e2e">
+            <directory>e2e</directory>
+        </testsuite>
+    </testsuites>
+
+    <!-- Coverage scope for the coverage run (bin/test with the coverage flag).
+         Paths resolve in-container, where the app lives flat under
+         /var/www/simplerisk (so ../includes and ../extras). No report element:
+         normal runs stay fast; a report is emitted only when a coverage flag
+         (coverage-html / coverage-text) is passed. -->
+    <coverage includeUncoveredFiles="true">
+        <include>
+            <directory suffix=".php">../includes</directory>
+            <directory suffix=".php">../extras</directory>
+        </include>
+        <exclude>
+            <directory suffix=".php">../includes/vendor</directory>
+        </exclude>
+    </coverage>
+</phpunit>

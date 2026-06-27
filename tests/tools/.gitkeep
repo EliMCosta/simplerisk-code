@@ -1,0 +1,2 @@
+# The PHPUnit phar is downloaded here by tests/bin/phpunit on first run
+# (gitignored — see .gitignore). PHPUnit's result cache also lives here.

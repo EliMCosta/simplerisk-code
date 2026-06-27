@@ -21,3 +21,10 @@ certs/*
 .env
 .env.support
 extras/*
+
+# PHPUnit phar (auto-fetched into tests/tools on first run) + result cache.
+tests/tools/*.phar
+tests/tools/.phpunit.cache
+# Generated code-coverage report (bin/test --coverage, via pcov).
+tests/tools/coverage/
+tests/tools/.coverage

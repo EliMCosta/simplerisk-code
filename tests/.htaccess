@@ -1,0 +1,11 @@
+# The app docroot is /var/www/simplerisk, so /tests would otherwise be served
+# over HTTP. These files are test code + fixtures, not for public consumption.
+<IfModule mod_authz_core.c>
+    # Apache 2.4
+    Require all denied
+</IfModule>
+<IfModule !mod_authz_core.c>
+    # Apache 2.2 fallback
+    Order allow,deny
+    Deny from all
+</IfModule>
