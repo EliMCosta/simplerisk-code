@@ -6240,8 +6240,13 @@ function getDocumentResponse()
         $document['next_review_date'] = format_date($document['next_review_date']);
         $document['control_ids'] = explode(',', $document['control_ids'] ?? '');
         $document['framework_ids'] = explode(',', $document['framework_ids'] ?? '');
-        $document['team_ids'] = explode(',', $document['team_ids']);
-        $document['additional_stakeholders'] = explode(',', $document['additional_stakeholders']);
+        // Guard against NULL: get_document_by_id() builds these via GROUP_CONCAT,
+        // which returns NULL (not '') when a document has no team/stakeholder
+        // mappings. On PHP 8.1+ explode(null) emits E_DEPRECATED, and with
+        // display_errors=on that text is prepended to the JSON response, so the
+        // browser's $.ajax JSON parse fails and the Edit modal never opens.
+        $document['team_ids'] = explode(',', $document['team_ids'] ?? '');
+        $document['additional_stakeholders'] = explode(',', $document['additional_stakeholders'] ?? '');
 
         json_response(200, "Success", $document);
     }
