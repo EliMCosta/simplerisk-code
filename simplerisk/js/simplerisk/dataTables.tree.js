@@ -649,12 +649,14 @@
             }
 
             // --- Expand/collapse toggle ---
+            // Route through api.srToggle() so lazy trees (rows flagged
+            // hasLazyChildren) fetch their children on first expand. For eager
+            // trees (children already nested in the payload) srToggle() falls
+            // through to a plain visibility toggle, so behaviour is unchanged.
             $table.on('click', '.sr-tree-toggle', function (e) {
                 e.preventDefault();
                 e.stopPropagation();
-                var id = $(this).data('sr-toggle');
-                state.expanded[id] = !isOpen(id);
-                api.draw(false);
+                api.srToggle($(this).data('sr-toggle'));
             });
             $table.on('keydown', '.sr-tree-toggle', function (e) {
                 if (e.key === 'Enter' || e.key === ' ') {

@@ -176,7 +176,7 @@
                 </div>
                 <div class="modal-footer">
                     <button type="button" name="cancel_add_tags" class="btn btn-secondary" data-bs-dismiss="modal" aria-label="Close"><?= $escaper->escapeHtml($lang['Cancel']); ?></button>
-                    <button name="continue_add_tags" class="btn btn-danger" data-bs-dismiss="modal" aria-hidden="true"><?= $escaper->escapeHtml($lang['Continue']); ?></button>
+                    <button type="button" name="continue_add_tags" class="btn btn-danger" data-bs-dismiss="modal" aria-hidden="true"><?= $escaper->escapeHtml($lang['Continue']); ?></button>
                 </div>
             </form>
         </div>

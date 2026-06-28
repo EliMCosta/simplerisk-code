@@ -9,3 +9,7 @@
 
 # TLS material is bind-mounted at runtime (./certs) and holds private keys — never bake in.
 certs/
+
+# Nested npm peer-dep copies (duplicate jquery etc.) — runtime uses top-level vendor/node_modules only.
+**/node_modules/**/node_modules
+simplerisk/vendor/swagger-api/swagger-ui/node_modules
