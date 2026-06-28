@@ -31,15 +31,21 @@ final class ApiAdminTileTest extends E2ETestCase
         'api_allow_user_keys' => ['Allow self-service', 'Disable self-service'],
     ];
 
+    /** Settings snapshotted in setUp and restored in tearDown (null = absent row). */
+    private const SNAPSHOT_SETTINGS = ['api', 'api_server_enabled', 'api_allow_user_keys'];
+
     /** @var array<string,?string> snapshot: setting name => value (null = absent) */
     private array $snapshot = [];
 
     protected function setUp(): void
     {
         parent::setUp();
-        foreach (array_keys(self::TOGGLES) as $name) {
+        foreach (self::SNAPSHOT_SETTINGS as $name) {
             $this->snapshot[$name] = $this->readSetting($name);
         }
+        // The toggle tests hit the activated admin tile (display_api()); without
+        // the `api` setting the page only renders the Activate button and no nonce.
+        $this->writeSetting('api', '1');
     }
 
     protected function tearDown(): void
