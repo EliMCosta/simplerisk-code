@@ -3471,35 +3471,6 @@
             "install-path": "../simplerisk/csrf-magic"
         },
         {
-            "name": "simplerisk/jeasyui",
-            "version": "1.10.19",
-            "version_normalized": "1.10.19.0",
-            "source": {
-                "type": "git",
-                "url": "https://github.com/simplerisk/jeasyui.git",
-                "reference": "ff885fee70a71562d9653a4ffe5721e8ec17ae69"
-            },
-            "dist": {
-                "type": "zip",
-                "url": "https://api.github.com/repos/simplerisk/jeasyui/zipball/ff885fee70a71562d9653a4ffe5721e8ec17ae69",
-                "reference": "ff885fee70a71562d9653a4ffe5721e8ec17ae69",
-                "shasum": ""
-            },
-            "time": "2024-09-19T15:57:42+00:00",
-            "type": "library",
-            "installation-source": "dist",
-            "notification-url": "https://packagist.org/downloads/",
-            "license": [
-                "proprietary"
-            ],
-            "description": "Licensed jQuery EasyUI package",
-            "support": {
-                "issues": "https://github.com/simplerisk/jeasyui/issues",
-                "source": "https://github.com/simplerisk/jeasyui/tree/1.10.19"
-            },
-            "install-path": "../simplerisk/jeasyui"
-        },
-        {
             "name": "simplesamlphp/assert",
             "version": "v1.8.4",
             "version_normalized": "1.8.4.0",

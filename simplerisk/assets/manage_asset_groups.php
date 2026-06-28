@@ -5,7 +5,7 @@
 
     // Render the header and sidebar
     require_once(realpath(__DIR__ . '/../includes/renderutils.php'));
-    render_header_and_sidebar(['easyui', 'easyui:treegrid', 'CUSTOM:selectlist.js'], ['check_assets' => true]);
+    render_header_and_sidebar(['datatables', 'datatables:tree', 'CUSTOM:selectlist.js'], ['check_assets' => true]);
 
     // Include required functions file
     require_once(realpath(__DIR__ . '/../includes/assets.php'));
@@ -185,10 +185,6 @@
     .no-padding {
         padding: 0px;
     }
-
-    .datagrid-btable, .datagrid-header-inner, .datagrid-htable {
-        width : 100%;
-    }
 </style>
 <script>
     function sortOptions(select) {
@@ -261,8 +257,7 @@
                     $('#asset-group-new-form')[0].reset();
 
                     var tree = $('#asset-groups-table');
-                    tree.treegrid('options').animate = false;
-                    tree.treegrid('reload');
+                    if ($.fn.dataTable.isDataTable(tree)) { tree.DataTable().ajax.reload(); }
                 },
                 error: function(xhr,status,error){
                     if(!retryCSRF(xhr, this))
@@ -302,8 +297,7 @@
                     $('#asset-group-update-form')[0].reset();
 
                     var tree = $('#asset-groups-table');
-                    tree.treegrid('options').animate = false;
-                    tree.treegrid('reload');
+                    if ($.fn.dataTable.isDataTable(tree)) { tree.DataTable().ajax.reload(); }
                 },
                 error: function(xhr,status,error){
                     if(!retryCSRF(xhr, this))
@@ -352,8 +346,7 @@
                     $('#asset-group-delete-form')[0].reset();
 
                     var tree = $('#asset-groups-table');
-                    tree.treegrid('options').animate = false;
-                    tree.treegrid('reload');
+                    if ($.fn.dataTable.isDataTable(tree)) { tree.DataTable().ajax.reload(); }
                 },
                 error: function(xhr,status,error){
                     if(!retryCSRF(xhr, this))
@@ -407,7 +400,8 @@
 
                     $('#asset-remove-form')[0].reset();
 
-                    $("tr[node-id='" + asset_id + "-" + asset_group_id + "']").remove();
+                    var tree = $('#asset-groups-table');
+                    if ($.fn.dataTable.isDataTable(tree)) { tree.DataTable().ajax.reload(null, false); }
                 },
                 error: function(xhr,status,error){
                     if(!retryCSRF(xhr, this))
@@ -460,11 +454,29 @@
             $("#asset--remove").modal('show');
         });
 
-        // $(".asset-groups-table").treegrid('resize');
 
         //Have to remove the 'fade' class for the shown event to work for modals
         $('#asset-group--create, #asset-group--update').on('shown.bs.modal', function() {
             $(this).find('.modal-body').scrollTop(0);
+        });
+
+        // Asset groups tree (DataTables tree adapter). Columns are auto-detected
+        // from the <th data-field="..."> header rendered by get_asset_groups_table().
+        $('#asset-groups-table').simpleriskTree({
+            idField: 'id',
+            treeField: 'name',
+            expandAll: false,
+            ajax: {
+                url: BASE_URL + '/api/v2/asset-group/tree'
+            },
+            serverPagination: {
+                pageSize: 10,
+                pageSizes: [5, 10, 20, 100]
+            },
+            onLoad: function (api, json) {
+                if (!json || !json.data) return;
+                $('#asset-groups-count').text(json.data.total != null ? json.data.total : 0);
+            }
         });
 
     });

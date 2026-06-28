@@ -2945,6 +2945,10 @@ $lang = array(
     'PurchaseExtraBody'                   => 'لا يشمل ترخيص SimpleRisk الحالي الخاص بك الميزة الإضافية {name} . تفضل بزيارة صفحة SimpleRisk Extras لمعرفة المزيد أو لشراء ترخيص.',
     'ViewExtras'                          => 'عرض الإضافات',
 
+    'MoveToActive'=>'نقل إلى نشط',
+    'MoveToInactive'=>'نقل إلى غير نشط',
+    'CantMoveIntoOwnChild'=>'Cannot move a node into its own descendant.',
+
     '' => '',
 );
 ?>

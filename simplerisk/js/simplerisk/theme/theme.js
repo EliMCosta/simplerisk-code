@@ -85,18 +85,17 @@ $(function () {
 
 
   // The logic that should be executed when the size of the content is changing
-  $(document).on('simplerisk.content.resize', function () {
-    // Readjust the datatable column headers when the sidebar's size was changed
-    if ($.fn.dataTable) {
-        $.fn.dataTable.tables({ visible: true, api: true }).columns.adjust();
+  function adjustVisibleDataTables() {
+    if (!$.fn.dataTable) {
+      return;
     }
+    $.fn.dataTable.tables({ visible: true, api: true }).columns.adjust();
+  }
 
-    // Readjust the treegrids when the sidebar's size was changed
-    // Had to add he setTimeout() because if there're more than one treegrids on the page
-    // then there needs to be a little delay between those calls
-    if ($.fn.treegrid) {
-        $('table.datagrid-f').each(function() {setTimeout(() => {$(this).treegrid("resize");}, 1);});
-    }
+  $(document).on('simplerisk.content.resize', function () {
+    adjustVisibleDataTables();
+    // Defer once more so column widths settle after the sidebar CSS transition.
+    setTimeout(adjustVisibleDataTables, 200);
   });
 
   //****************************

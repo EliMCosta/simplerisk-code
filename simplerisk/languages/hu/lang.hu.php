@@ -2945,6 +2945,10 @@ $lang = array(
     'PurchaseExtraBody'                   => 'A {name} Extra nem része a jelenlegi SimpleRisk licencednek. További információért vagy licenc vásárlásához látogass el a SimpleRisk Extrák oldalra.',
     'ViewExtras'                          => 'Extrák megtekintése',
 
+    'MoveToActive'=>'Áthelyezés Aktívba',
+    'MoveToInactive'=>'Áthelyezés Inaktívba',
+    'CantMoveIntoOwnChild'=>'Cannot move a node into its own descendant.',
+
     '' => '',
 );
 ?>

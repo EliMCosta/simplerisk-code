@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Host convenience wrapper: regenerate the committed DataTables tree golden fixtures
+# (tests/fixtures/tree/*.json) inside the running simplerisk-app container.
+#
+# Run this AFTER an intentional change to an EasyUI tree/treegrid endpoint's
+# status, content-type, or JSON envelope. It captures the live contract so the
+# new shape becomes the baseline TreeEndpointContractTest checks against.
+#
+# Usage (from repo root): bin/regen-tree-fixtures
+set -euo pipefail
+
+exec podman exec simplerisk-app bash -lc \
+  'cd /var/www/simplerisk/tests && ./bin/phpunit --configuration phpunit.xml --testsuite e2e --group regen --testdox'

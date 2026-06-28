@@ -2945,6 +2945,10 @@ $lang = array(
     'PurchaseExtraBody'                   => 'Extra-ul {name} nu este inclus în licența dvs. SimpleRisk curentă. Vizitați pagina SimpleRisk Extras pentru a afla mai multe sau pentru a achiziționa o licență.',
     'ViewExtras'                          => 'Vezi extrasuri',
 
+    'MoveToActive'=>'Mută la Activ',
+    'MoveToInactive'=>'Mută la Inactiv',
+    'CantMoveIntoOwnChild'=>'Cannot move a node into its own descendant.',
+
     '' => '',
 );
 ?>

@@ -5,7 +5,7 @@
 
     // Render the header and sidebar
     require_once(realpath(__DIR__ . '/../includes/renderutils.php'));
-    render_header_and_sidebar(['blockUI', 'selectize', 'datatables', 'datetimerangepicker', 'WYSIWYG', 'multiselect', 'easyui:treegrid', 'easyui:dnd', 'tabs:logic', 'CUSTOM:pages/governance.js', 'CUSTOM:common.js', 'JSLocalization'], ['check_governance' => true]);
+    render_header_and_sidebar(['blockUI', 'selectize', 'datatables', 'datatables:tree', 'datetimerangepicker', 'WYSIWYG', 'multiselect', 'tabs:logic', 'CUSTOM:pages/governance.js', 'CUSTOM:common.js', 'JSLocalization'], ['check_governance' => true]);
 
     // Include required functions file
     require_once(realpath(__DIR__ . '/../includes/permissions.php'));
@@ -197,11 +197,6 @@
 
 ?>
 <script>
-    
-    // Set current mouse position
-    var mouseX, mouseY;
-    $(document).mousemove(function(e) {mouseX = e.pageX;mouseY = e.pageY;}).mouseover();
-
     $(document).ready(function() {
 
     <?php 
@@ -355,19 +350,22 @@
     $(document).on('shown.bs.tab', 'nav a[data-bs-toggle="tab"][data-status]', function (e) {
         let status = $(this).data('status');
         $('.framework-table-'+ status).initAsFrameworkTreegrid(status, <?= has_permission('modify_frameworks') ? 'true' : 'false' ?>);
-
-        // Need to trigger a resize event to make the treegrid visible
-        $(window).trigger('resize');
     });
 
     // When the frameworks tab is shown, initialize the treegrid for the table of the active tab
     $(document).on('shown.bs.tab', 'nav a[data-bs-toggle="tab"][data-bs-target="#frameworks-tab-content"]', function (e) {
-        let activeTab = $(this).find('nav a[data-bs-toggle="tab"].active');
-        let status = $(activeTab).data('status');
+        let activeTab = $('#frameworks-tab-content nav a[data-bs-toggle="tab"].active[data-status]');
+        let status = activeTab.data('status');
         $('.framework-table-'+ status).initAsFrameworkTreegrid(status, <?= has_permission('modify_frameworks') ? 'true' : 'false' ?>);
+    });
 
-        // Need to trigger a resize event to make the treegrid visible
-        $(window).trigger('resize');
+    // Trigger init for the first visible framework tab (shown.bs.tab is not fired on page load).
+    $(function() {
+        setTimeout(function() {
+            if ($('#frameworks-tab-content').hasClass('active')) {
+                $('#frameworks-tab-content nav a[data-bs-toggle="tab"].active[data-status]').trigger('shown.bs.tab');
+            }
+        }, 0);
     });
 
 </script>
@@ -386,28 +384,8 @@
             <div>
                 <nav class="nav nav-tabs">
                     <a class="btn btn-primary" data-bs-target="#framework--add" data-bs-toggle="modal"><i class="fa fa-plus"></i></a>
-                    <a class="nav-link easyui-droppable targetarea active" data-bs-target="#active-frameworks" data-bs-toggle="tab" data-status="1" data-options = "
-                            accept: '.datagrid-row.droppable.2',
-                            onDragEnter:function(e,source){
-                                $(this).toggleClass('highlight');
-                                $('span.tree-dnd-icon').removeClass('tree-dnd-no').addClass('tree-dnd-yes');
-                            },
-                            onDragLeave: function(e,source){
-                                $(this).toggleClass('highlight');
-                                $('span.tree-dnd-icon').removeClass('tree-dnd-yes').addClass('tree-dnd-no');
-                            }
-                        "><?= $escaper->escapeHtml($lang['ActiveFrameworks']); ?>(<span id="active-frameworks-count"><?= $active_framework_count ?></span>)</a>
-                    <a class="nav-link easyui-droppable targetarea" data-bs-target="#inactive-frameworks" data-bs-toggle="tab" data-status="2" data-options = "
-                            accept: '.datagrid-row.droppable.1',
-                            onDragEnter:function(e,source){
-                                $(this).toggleClass('highlight');
-                                $('span.tree-dnd-icon').removeClass('tree-dnd-no').addClass('tree-dnd-yes');  
-                            },
-                            onDragLeave: function(e,source){
-                                $(this).toggleClass('highlight');
-                                $('span.tree-dnd-icon').removeClass('tree-dnd-yes').addClass('tree-dnd-no');
-                            }
-                        "><?= $escaper->escapeHtml($lang['InactiveFrameworks']); ?>(<span id="inactive-frameworks-count"><?= $inactive_framework_count ?></span>)</a>
+                    <a class="nav-link targetarea active" data-bs-target="#active-frameworks" data-bs-toggle="tab" data-status="1"><?= $escaper->escapeHtml($lang['ActiveFrameworks']); ?>(<span id="active-frameworks-count"><?= $active_framework_count ?></span>)</a>
+                    <a class="nav-link targetarea" data-bs-target="#inactive-frameworks" data-bs-toggle="tab" data-status="2"><?= $escaper->escapeHtml($lang['InactiveFrameworks']); ?>(<span id="inactive-frameworks-count"><?= $inactive_framework_count ?></span>)</a>
                 </nav>
             </div>
             <div class="tab-content mt-2 card-body border">

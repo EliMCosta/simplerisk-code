@@ -4466,7 +4466,7 @@ function updateFrameworkResponse() {
  *************************************/
 function updateFrameworkStatusResponse()
 {
-    global $lang, $escaper;
+    global $lang;
 
     $status_id  = (int)$_POST['status'];
     $framework_id = (int)$_POST['framework_id'];
@@ -4474,22 +4474,23 @@ function updateFrameworkStatusResponse()
     // If user has no permission for modify frameworks
     if(empty($_SESSION['modify_frameworks']))
     {
-        $status_message = $escaper->escapeHtml($lang['NoModifyFrameworkPermission']);
         // Display an alert
-        set_alert(true, "bad", $status_message);
+        set_alert(true, "bad", $lang['NoModifyFrameworkPermission']);
     }
     // If user has permission for modify frameworks
     else
     {
         update_framework_status($status_id, $framework_id);
 
-        $status_message = $escaper->escapeHtml($lang['FrameworkStatusSuccessUpdate']);
-
         // Display an alert
-        set_alert(true, "good", $status_message);
+        set_alert(true, "good", $lang['FrameworkStatusSuccessUpdate']);
     }
 
-    json_response(200, $status_message, []);
+    // Return the structured alerts array (and clear them from the session),
+    // matching updateFrameworkResponse(). Returning a raw string here made
+    // showAlertsFromArray() fall back to a red error toast, and left the
+    // session alert uncleared so it reappeared (green) after the reload.
+    json_response(200, get_alert(true), []);
 }
 
 /****************************
@@ -5354,11 +5355,11 @@ function getInitiateTestAuditsResponse() {
     // If the user has compliance permissions
     if (check_permission("compliance")) {
 
-        $filter_by_text         = $_GET["filter_by_text"];
+        $filter_by_text         = $_GET["filter_by_text"] ?? '';
         $filter_by_status       = empty($_GET["filter_by_status"]) ? [] : $_GET["filter_by_status"];
-        $filter_by_frequency    = $_GET["filter_by_frequency"];
+        $filter_by_frequency    = $_GET["filter_by_frequency"] ?? '';
         $filter_by_framework    = empty($_GET["filter_by_framework"]) ? [] : $_GET["filter_by_framework"];
-        $filter_by_control      = $_GET["filter_by_control"];
+        $filter_by_control      = $_GET["filter_by_control"] ?? '';
 
         $results = array();
 
@@ -5388,7 +5389,8 @@ function getInitiateTestAuditsResponse() {
 
         }
 
-        // If framework was loaded
+        // Root load returns framework rows only; controls/tests are fetched per
+        // node via ?id= (lazy load) when the user expands a row in the tree.
         if (empty($_GET['id'])) {
 
             // Get active frameworks
@@ -5402,11 +5404,13 @@ function getInitiateTestAuditsResponse() {
 
                 }
 
+                $framework_value = (int)$framework['value'];
+
                 if (isset($_SESSION["initiate_audits"]) && $_SESSION["initiate_audits"] == 1) {
 
                     $action = "
                         <div class='text-center'>
-                            <button data-id='{$framework['value']}' type='button' class='btn btn-dark initiate-framework-audit-btn' >{$escaper->escapeHtml($lang['InitiateFrameworkAudit'])}</button>
+                            <button data-id='{$framework_value}' type='button' class='btn btn-dark initiate-framework-audit-btn' >{$escaper->escapeHtml($lang['InitiateFrameworkAudit'])}</button>
                         </div>
                     ";
 
@@ -5417,9 +5421,10 @@ function getInitiateTestAuditsResponse() {
                 }
 
                 $results[] = array(
-                    'id' => 'framework_'.$framework['value'],
+                    'id' => 'framework_'.$framework_value,
                     'state' => 'closed',
-                    'name' => "<a class='framework-name text-info' data-id='{$framework['value']}' href='' title='{$escaper->escapeHtml($lang['Framework'])}'>{$escaper->escapeHtml($framework['name'])}</a>",
+                    'hasLazyChildren' => true,
+                    'name' => "<a class='framework-name text-info' data-id='{$framework_value}' href='' title='{$escaper->escapeHtml($lang['Framework'])}'>{$escaper->escapeHtml($framework['name'])}</a>",
                     'last_audit_date' => $escaper->escapeHtml(format_date($framework['last_audit_date'])),
                     'test_frequency' => $escaper->escapeHtml($framework['desired_frequency']),
                     'next_audit_date' => $escaper->escapeHtml(format_date($framework['next_audit_date'])),
@@ -5428,7 +5433,7 @@ function getInitiateTestAuditsResponse() {
                 );
             }
             
-        // If a framework node was clicked
+        // If a framework node was expanded
         } elseif (stripos($_GET['id'], "framework_") !== false) {
 
             $framework_value = (int)str_replace("framework_", "", $_GET['id']);
@@ -5459,6 +5464,7 @@ function getInitiateTestAuditsResponse() {
                 $results[] = array(
                     'id' => "control_".$framework_value."_".$framework_control['id'],
                     'state' => 'closed',
+                    'hasLazyChildren' => true,
                     'name' => "<a class='control-name text-info' data-id='{$framework_control['id']}' href='' title='".$escaper->escapeHtml($lang['Control'])."'>".$escaper->escapeHtml($framework_control['short_name'])."</a>",
                     'last_audit_date' => $escaper->escapeHtml(format_date($framework_control['last_audit_date'])),
                     'test_frequency' => $escaper->escapeHtml($framework_control['desired_frequency']),
@@ -5512,7 +5518,6 @@ function getInitiateTestAuditsResponse() {
 
             }
         }
-
         // @phan-suppress-next-line SecurityCheck-XSS -- json_encode() output; all fields individually escaped
         echo json_encode($results);
 
@@ -6246,6 +6251,58 @@ function getDocumentResponse()
     }
 }
 
+/*******************************************************
+ * FUNCTION: FORMAT DOCUMENT VERSIONS FOR TREEGRID     *
+ *******************************************************/
+function format_tabular_document_versions_for_treegrid($document_id) {
+
+    global $escaper, $lang;
+
+    $document_id = (int)$document_id;
+    $current_document = get_document_by_id($document_id);
+    $version = $current_document['file_version'];
+
+    $documents = get_document_versions_by_id($document_id);
+    $children = [];
+
+    foreach ($documents as $index => $document) {
+
+        $document_row_id = (int)$document['id'];
+        $document['id'] = $document['id'] . "_" . $document['file_version'];
+        $document['state'] = "open";
+        $document['document_type'] = $escaper->escapeHtml($document['document_type']);
+        $document['document_name'] = "<a class='text-info' href='" . build_url("governance/download.php?id={$escaper->escapeHtml($document['unique_name'])}") . "' >{$escaper->escapeHtml($document['document_name'])} ({$document['file_version']})</a>";
+        $document['submitted_by'] = $escaper->escapeHtml(get_name_by_value('user', (int)$document['submitted_by']));
+        $document['updated_by'] = $escaper->escapeHtml(get_name_by_value('user', (int)$document['updated_by']));
+        $document['status'] = $escaper->escapeHtml(get_name_by_value('document_status', $document['status']));
+
+        if ($index == 0) {
+            $document['creation_date'] = format_date($document['creation_date']);
+        } else {
+            $document['creation_date'] = format_date($document['file_upload_time']);
+        }
+
+        $document['approval_date'] = format_date($document['approval_date']);
+        $document['actions'] = "
+            <div class='text-center nowrap'>
+        ";
+
+        if (!empty($_SESSION['delete_documentation']) && $version != $document['file_version']) {
+            $document['actions'] .= "
+                <a class='document--delete mx-1' data-version='{$document['file_version']}' data-id='{$document_row_id}' data-bs-toggle='modal' data-bs-target= '#document-delete-modal' id='document-delete-modal-btn' ><i class='fa fa-trash'></i></a>
+            ";
+        }
+        $document['actions'] .= "
+            </div>
+        ";
+
+        $children[] = $document;
+    }
+
+    return $children;
+
+}
+
 /******************************************************
  * FUNCTION: GET DATA FOR TABULAR DOCUMENTS DATATABLE *
  ******************************************************/
@@ -6259,53 +6316,12 @@ function getTabularDocumentsResponse() {
         $type = $_GET['type'];
         $document_id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
 
-        // If this is request to view all versions of selected document.
+        // Legacy lazy-load branch kept for any external callers that still
+        // request versions via ?id=; the DataTables tree eager-loads below.
         if ($document_id) {
 
-            // Get current document
-            $current_document = get_document_by_id($document_id);
-            $version = $current_document['file_version'];
+            $documents = format_tabular_document_versions_for_treegrid($document_id);
 
-            // Get documents with versions
-            $documents = get_document_versions_by_id($document_id);
-            
-            foreach ($documents as $index => &$document) {
-
-                $document['id'] = $document['id'] . "_" . $document['file_version'];
-                $document['state'] = "open";
-                $document['document_type'] = $escaper->escapeHtml($document['document_type']);
-                $document['document_name'] = "<a class='text-info' href='" . build_url("governance/download.php?id={$escaper->escapeHtml($document['unique_name'])}") . "' >{$escaper->escapeHtml($document['document_name'])} ({$document['file_version']})</a>";
-                $document['submitted_by'] = $escaper->escapeHtml(get_name_by_value('user', (int)$document['submitted_by']));
-                $document['updated_by'] = $escaper->escapeHtml(get_name_by_value('user', (int)$document['updated_by']));
-                $document['status'] = $escaper->escapeHtml(get_name_by_value('document_status', $document['status']));
-                
-                // if the version is the original version, the creation_date should be the date that the document is created.
-                if ($index == 0) {
-
-                    $document['creation_date'] = format_date($document['creation_date']);
-
-                // if the version is the late version, the creation_date should be the date that the file is uploaded.
-                } else {
-
-                    $document['creation_date'] = format_date($document['file_upload_time']);
-                    
-                }
-
-                $document['approval_date'] = format_date($document['approval_date']);
-                $document['actions'] = "
-                    <div class='text-center nowrap'>
-                ";
-
-                if (!empty($_SESSION['delete_documentation']) && $version != $document['file_version']) {
-                    $document['actions'] .= "
-                        <a class='document--delete mx-1' data-version='{$document['file_version']}' data-id='" . ((int)$document['id']) . "' data-bs-toggle='modal' data-bs-target= '#document-delete-modal' id='document-delete-modal-btn' ><i class='fa fa-trash'></i></a>
-                    ";
-                }
-                $document['actions'] .= "
-                    </div>
-                ";
-            }
-            
         // If this is request to view document list.
         } else {
 
@@ -6404,6 +6420,15 @@ function getTabularDocumentsResponse() {
                 $document['actions'] .= "
                     </div>
                 ";
+
+                // Eager-load file versions as children so the DataTables tree
+                // adapter receives a fully nested tree in one request. (The old
+                // EasyUI grid lazy-loaded versions per document via ?id=.)
+                $version_children = format_tabular_document_versions_for_treegrid((int)$document['id']);
+                if (count($version_children) > 1) {
+                    $document['children'] = $version_children;
+                }
+
                 $filtered_documents[] = $document;
             }
             $documents = $filtered_documents;
@@ -13518,7 +13543,7 @@ function createAudit()
     $tags = isset($_POST['tags']) ? $_POST['tags'] : [];
 
     // Use the configured initiated_audit_status setting, cast to int to prevent injection
-    $initiated_audit_status = (int)(get_setting("initiated_audit_status") ?: 0);
+    $initiated_audit_status = get_initiated_audit_status();
 
     $name = initiate_test_audit($test_id, $initiated_audit_status, $tags);
 

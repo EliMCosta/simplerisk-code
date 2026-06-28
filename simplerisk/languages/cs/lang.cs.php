@@ -2945,6 +2945,10 @@ $lang = array(
     'PurchaseExtraBody'                   => 'Doplňková funkce {name} není součástí vaší aktuální licence SimpleRisk. Navštivte stránku SimpleRisk Extras, kde se dozvíte více nebo si můžete licenci zakoupit.',
     'ViewExtras'                          => 'Zobrazit doplňky',
 
+    'MoveToActive'=>'Přesunout do Aktivních',
+    'MoveToInactive'=>'Přesunout do Neaktivních',
+    'CantMoveIntoOwnChild'=>'Cannot move a node into its own descendant.',
+
     '' => '',
 );
 ?>

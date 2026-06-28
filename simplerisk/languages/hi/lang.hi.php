@@ -2945,6 +2945,10 @@ $lang = array(
     'PurchaseExtraBody'                   => '{name} एक्स्ट्रा सुविधा आपके मौजूदा SimpleRisk लाइसेंस में शामिल नहीं है। अधिक जानकारी के लिए या लाइसेंस खरीदने के लिए SimpleRisk एक्स्ट्रा पेज पर जाएं।',
     'ViewExtras'                          => 'अतिरिक्त देखें',
 
+    'MoveToActive'=>'सक्रिय में ले जाएँ',
+    'MoveToInactive'=>'निष्क्रिय में ले जाएँ',
+    'CantMoveIntoOwnChild'=>'Cannot move a node into its own descendant.',
+
     '' => '',
 );
 ?>

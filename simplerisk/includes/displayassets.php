@@ -663,7 +663,7 @@ function display_main_detail_asset_fields_treegrid_th($fields)
                 // Include the extra
                 require_once(realpath(__DIR__ . '/../extras/customization/index.php'));
 
-                echo "<th data-options=\"field:'" . $escaper->escapeHtml($field['id']) . "'\" width='10%'>" . $escaper->escapeHtml($field['name']) . "</th>";
+                echo "<th data-field=\"" . $escaper->escapeHtml($field['id']) . "\" width='10%'>" . $escaper->escapeHtml($field['name']) . "</th>";
             }
         }
     }
@@ -678,7 +678,7 @@ function display_asset_name_treegrid_th()
 {
     global $lang, $escaper;
 
-    echo "<th data-options=\"field:'name'\" width='20%'>" . $escaper->escapeHtml($lang["Name"]) . "</th>";
+    echo "<th data-field=\"name\" width='20%'>" . $escaper->escapeHtml($lang["Name"]) . "</th>";
 }
 
 /**********************************
@@ -688,7 +688,7 @@ function display_asset_ip_address_treegrid_th()
 {
     global $lang, $escaper;
 
-    echo "<th data-options=\"field:'ip'\" width='10%'>" . $escaper->escapeHtml($lang['IPAddress']) . "</th>";
+    echo "<th data-field=\"ip\" width='10%'>" . $escaper->escapeHtml($lang['IPAddress']) . "</th>";
 }
 
 /***************************************
@@ -698,7 +698,7 @@ function display_asset_valuation_treegrid_th()
 {
     global $lang, $escaper;
 
-    echo "<th data-options=\"field:'value'\" width='10%'>" . $escaper->escapeHtml($lang['AssetValuation']) . "</th>";
+    echo "<th data-field=\"value\" width='10%'>" . $escaper->escapeHtml($lang['AssetValuation']) . "</th>";
 }
 
 /*******************************************
@@ -708,7 +708,7 @@ function display_asset_site_location_treegrid_th()
 {
     global $lang, $escaper;
 
-    echo "<th data-options=\"field:'location'\" width='10%'>" . $escaper->escapeHtml($lang['SiteLocation']) . "</th>";
+    echo "<th data-field=\"location\" width='10%'>" . $escaper->escapeHtml($lang['SiteLocation']) . "</th>";
 }
 
 /**********************************
@@ -718,7 +718,9 @@ function display_asset_team_treegrid_th()
 {
     global $lang, $escaper;
 
-    echo "<th data-options=\"field:'team'\" width='10%'>" . $escaper->escapeHtml($lang['Team']) . "</th>";
+    // data-field must match the row key ('teams') used by get_assets() and
+    // get_assets_by_group(); a mismatch here leaves the Team column empty.
+    echo "<th data-field=\"teams\" width='10%'>" . $escaper->escapeHtml($lang['Team']) . "</th>";
 }
 
 /*************************************
@@ -728,7 +730,7 @@ function display_asset_details_treegrid_th()
 {
     global $lang, $escaper;
 
-    echo "<th data-options=\"field:'details'\" width='15%'>" . $escaper->escapeHtml($lang['AssetDetails']) . "</th>";
+    echo "<th data-field=\"details\" width='15%'>" . $escaper->escapeHtml($lang['AssetDetails']) . "</th>";
 }
 
 /*************************************
@@ -738,7 +740,7 @@ function display_asset_tags_treegrid_th()
 {
     global $lang, $escaper;
 
-    echo "<th data-options=\"field:'tags'\" width='10%'>" . $escaper->escapeHtml($lang['Tags']) . "</th>";
+    echo "<th data-field=\"tags\" width='10%'>" . $escaper->escapeHtml($lang['Tags']) . "</th>";
 }
 
 /*************************************
@@ -748,7 +750,7 @@ function display_asset_actions_treegrid_th()
 {
     global $lang, $escaper;
 
-    echo "<th data-options=\"field:'actions', align: 'center'\" width='10%'>{$escaper->escapeHtml($lang['Actions'])}</th>";
+    echo "<th data-field=\"actions\" width='10%'>{$escaper->escapeHtml($lang['Actions'])}</th>";
 }
 
 ?>

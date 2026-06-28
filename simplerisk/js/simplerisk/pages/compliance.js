@@ -1,24 +1,37 @@
 $.fn.extend({
-    initAsInitiateAuditTreegrid: function() {
-        this.treegrid({
-            iconCls: 'icon-ok',
-            animate: true,
-            fitColumns: true,
-            nowrap: true,
-            collapsible: false,
-            url: BASE_URL + '/api/v2/compliance/initiate_audits',
-            method: 'get',
+        initAsInitiateAuditTreegrid: function() {
+        if (this.data('initialized')) {
+            this.reloadSrTree();
+            return;
+        }
+
+        this.simpleriskTree({
             idField: 'id',
             treeField: 'name',
-            scrollbarSize: 0,
-            onBeforeLoad: function(row, param){
-                param.filter_by_text = $('#filter_by_text').val();
-                param.filter_by_status = $('#filter_by_status').val();
-                param.filter_by_frequency = $('#filter_by_frequency').val();
-                param.filter_by_framework = $('#filter_by_framework').val();
-                param.filter_by_control = $('#filter_by_control').val();
+            expandAll: false,
+            lazyLoad: { idParam: 'id' },
+            ajax: {
+                url: BASE_URL + '/api/v2/compliance/initiate_audits',
+                data: function () {
+                    return {
+                        filter_by_text: $('#filter_by_text').val(),
+                        filter_by_status: $('#filter_by_status').val(),
+                        filter_by_frequency: $('#filter_by_frequency').val(),
+                        filter_by_framework: $('#filter_by_framework').val(),
+                        filter_by_control: $('#filter_by_control').val()
+                    };
+                }
             },
+            columns: [
+                { data: 'name', width: '57%' },
+                { data: 'test_frequency', width: '8%' },
+                { data: 'last_audit_date', width: '10%' },
+                { data: 'next_audit_date', width: '10%' },
+                { data: 'status', width: '5%' },
+                { data: 'action', orderable: false, searchable: false, width: '10%' }
+            ]
         });
+        this.data('initialized', true);
     },
 });
 

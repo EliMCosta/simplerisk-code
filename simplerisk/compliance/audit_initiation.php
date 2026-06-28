@@ -5,7 +5,7 @@
 
     // Render the header and sidebar
     require_once(realpath(__DIR__ . '/../includes/renderutils.php'));
-    render_header_and_sidebar(['blockUI', 'selectize', 'datatables', 'WYSIWYG', 'multiselect', 'easyui', 'datetimerangepicker', 'CUSTOM:pages/compliance.js', 'CUSTOM:pages/governance.js', 'CUSTOM:common.js'], ['check_compliance' => true]);
+    render_header_and_sidebar(['blockUI', 'selectize', 'datatables', 'WYSIWYG', 'multiselect', 'datatables:tree', 'datetimerangepicker', 'CUSTOM:pages/compliance.js', 'CUSTOM:pages/governance.js', 'CUSTOM:common.js'], ['check_compliance' => true]);
 
     // Include required functions file
     require_once(realpath(__DIR__ . '/../includes/governance.php'));
@@ -83,6 +83,12 @@
                 success : function (res){
                     if(res.status_message){
                         showAlertsFromArray(res.status_message);
+                    }
+                    if (res.status === 200) {
+                        var t = $('#initiate_audit_treegrid');
+                        if ($.fn.dataTable.isDataTable(t)) {
+                            t.reloadSrTree();
+                        }
                     }
                 },
                 error: function(xhr,status,error){

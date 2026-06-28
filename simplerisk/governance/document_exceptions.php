@@ -5,7 +5,7 @@
 
 // Render the header and sidebar
 require_once(realpath(__DIR__ . '/../includes/renderutils.php'));
-render_header_and_sidebar(['easyui:treegrid', 'easyui:filter', 'WYSIWYG', 'multiselect', 'datetimerangepicker', 'CUSTOM:common.js', 'CUSTOM:pages/governance.js', 'tabs:logic'], ['check_governance' => true]);
+render_header_and_sidebar(['datatables', 'datatables:tree', 'WYSIWYG', 'multiselect', 'datetimerangepicker', 'CUSTOM:common.js', 'CUSTOM:pages/governance.js', 'tabs:logic'], ['check_governance' => true]);
 
 // Include required functions file
 require_once(realpath(__DIR__ . '/../includes/permissions.php'));
@@ -132,28 +132,40 @@ function display($display = "")
     $(function () {
 
         // Have to init the treegrid when the tab is first displayed, because it's rendered incorrectly when initialized in the background
-        $(document).on('shown.bs.tab', 'nav a[data-bs-toggle=\"tab\"][data-type]', function (e) {
+        $(document).on('shown.bs.tab', '#exceptions-tab-content nav a[data-bs-toggle=\"tab\"][data-type]', function (e) {
             let type = $(this).data('type');
             $(`#exception-table-${type}`).initAsExceptionTreegrid(type);
         });
 
         // Initialize the treegrid after the first tab is shown completely when the page loads
         setTimeout(() => {
-            // Trigger the event manually for the first visible tab since the above event won't be triggered on page load
-            $('a[data-bs-toggle="tab"].active').trigger('shown.bs.tab');
+            // Trigger the event manually for the first visible tab since the above event won't be triggered on page load.
+            // Scope to this page's tab-content (matches the delegated handler above) so a stray
+            // active tab elsewhere on the page can't fire the wrong handler or skip init.
+            $('#exceptions-tab-content nav a[data-bs-toggle="tab"].active[data-type]').trigger('shown.bs.tab');
         }, 0);
 
     });
 
-    function wireActionButtons(tab) {
+    var _exceptionActionButtonsWired = false;
+    function wireActionButtons() {
+        // DataTables redraws rows after each ajax load; direct .click() handlers are
+        // lost. Bind once via delegation on the stable tab container.
+        if (_exceptionActionButtonsWired) {
+            return;
+        }
+        _exceptionActionButtonsWired = true;
+
+        var $root = $('#exceptions-tab-content');
 
         //Edit
-        $("#"+ tab + "-exceptions .exception--edit").click(function(){
+        $root.on('click', '.exception--edit', function(e){
+            e.preventDefault();
             var exception_id = $(this).data("id");
             var type = $(this).data("type");
 
             // When editing an unapproved exception
-            if (tab == "unapproved") {
+            if ($(this).closest('#unapproved-exceptions').length) {
 
                 // Hide the unapprove button
                 $("#exception--update #unapprove_exception").hide();
@@ -218,8 +230,8 @@ function display($display = "")
         });
 
         //Info + Approve
-        $("#"+ tab + "-exceptions span.exception-name > a, #"+ tab + "-exceptions a.exception--approve").click(function(){
-            event.preventDefault();
+        $root.on('click', 'span.exception-name > a, a.exception--approve', function(e){
+            e.preventDefault();
             var exception_id = $(this).data("id");
             var type = $(this).data("type");
             var approval = $(this).hasClass("exception--approve");
@@ -280,7 +292,8 @@ function display($display = "")
         });
 
         //Delete
-        $("#"+ tab + "-exceptions a.exception--delete").click(function(){
+        $root.on('click', 'a.exception--delete', function(e){
+            e.preventDefault();
             $("#exception-delete-form [name='exception_id']").val($(this).data("id"));
             $("#exception-delete-form [name='type']").val($(this).data("type"));
             $("#exception-delete-form #approved").prop('checked', $(this).data("approved"));
@@ -288,7 +301,8 @@ function display($display = "")
         });
 
         //Batch-delete
-        $("#"+ tab + "-exceptions a.exception-batch--delete").click(function(){
+        $root.on('click', 'a.exception-batch--delete', function(e){
+            e.preventDefault();
             $("#exception-batch-delete-form [name='parent_id']").val($(this).data("id"));
             $("#exception-batch-delete-form [name='type']").val($(this).data("type"));
             $("#exception-batch-delete-form [name='approved']").prop('checked', $(this).data("approved"));
@@ -412,6 +426,8 @@ function display($display = "")
 
      $(document).ready(function(){
 
+        wireActionButtons();
+
         $("#add_exception").click(function(event) {
             event.preventDefault();
             if ($('#file-upload')[0].files[0] && <?= $escaper->escapeHtml(get_setting('max_upload_size')); ?> <= $('#file-upload')[0].files[0].size) {
@@ -438,13 +454,9 @@ function display($display = "")
                     $("#exception-new-form [name='associated_risks[]']").multiselect('select', []);
 
                     if (!data.data.approved) {
-                        var tree = $('#exception-table-unapproved');
-                        tree.treegrid('options').animate = false;
-                        tree.treegrid('reload');
+                        reloadExceptionTree('unapproved');
                     } else {
-                        var tree = $('#exception-table-' + data.data.type);
-                        tree.treegrid('options').animate = false;
-                        tree.treegrid('reload');
+                        reloadExceptionTree(data.data.type);
                     }
 
                     refreshAuditLogsIfOpen();
@@ -498,29 +510,21 @@ function display($display = "")
                         tab_type = 'control';
                     }
 
-                    var tree = $('#exception-table-' + tab_type);
-                    tree.treegrid('options').animate = false;
-                    tree.treegrid('reload');
+                    reloadExceptionTree(tab_type);
 
                     // If exception_update_resets_approval we have to refresh after an update
                     if (<?php if (get_setting('exception_update_resets_approval')) echo "true || ";  ?>!data.data.approved_original) {
-                        var tree = $('#exception-table-unapproved');
-                        tree.treegrid('options').animate = false;
-                        tree.treegrid('reload');
+                        reloadExceptionTree('unapproved');
                     }
 
                     // If the original type is approved but the new type is not, we have to reload the treegrid for the unapproved exceptions
                     if (data.data.approved_original && !data.data.approved) {
-                        var tree = $('#exception-table-unapproved');
-                        tree.treegrid('options').animate = false;
-                        tree.treegrid('reload');
+                        reloadExceptionTree('unapproved');
                     }
 
                     // If type is changed we have to refresh the tab of the old type as well
                     if (tab_type !== old_type) {
-                        var tree = $('#exception-table-' + old_type);
-                        tree.treegrid('options').animate = false;
-                        tree.treegrid('reload');
+                        reloadExceptionTree(old_type);
                     }
 
                     refreshAuditLogsIfOpen();
@@ -559,13 +563,7 @@ function display($display = "")
                     $("#exception-update-form [name='additional_stakeholders[]']").multiselect('select', []);
                     $("#exception-update-form [name='associated_risks[]']").multiselect('select', []);
 
-                    // Reload the treegrids
-                    let tab_types = ["policy", "control", "unapproved"];
-                    tab_types.forEach(function(tab_type) {
-                        let tree = $('#exception-table-' + tab_type);
-                        tree.treegrid('options').animate = false;
-                        tree.treegrid('reload');
-                    });
+                    reloadExceptionTrees(['policy', 'control', 'unapproved']);
 
                     refreshAuditLogsIfOpen();
                 },
@@ -599,13 +597,8 @@ function display($display = "")
 
                     $('#exception--view').modal('hide');
 
-                    var tree = $('#exception-table-' + $("#exception-approve-form [name='type']").val());
-                    tree.treegrid('options').animate = false;
-                    tree.treegrid('reload');
-
-                    tree = $('#exception-table-unapproved');
-                    tree.treegrid('options').animate = false;
-                    tree.treegrid('reload');
+                    reloadExceptionTree($("#exception-approve-form [name='type']").val());
+                    reloadExceptionTree('unapproved');
 
                     refreshAuditLogsIfOpen();
                 },
@@ -639,14 +632,10 @@ function display($display = "")
 
                     $('#exception--delete').modal('hide');
 
-                    var tree = $('#exception-table-' + $("#exception-delete-form [name='type']").val());
-                    tree.treegrid('options').animate = false;
-                    tree.treegrid('reload');
+                    reloadExceptionTree($("#exception-delete-form [name='type']").val());
 
                     if (!$("#exception-delete-form #approved").prop('checked')) {
-                        tree = $('#exception-table-unapproved');
-                        tree.treegrid('options').animate = false;
-                        tree.treegrid('reload');
+                        reloadExceptionTree('unapproved');
                     }
 
                     refreshAuditLogsIfOpen();
@@ -681,14 +670,10 @@ function display($display = "")
 
                     $('#exception-batch--delete').modal('hide');
 
-                    var tree = $('#exception-table-' + $("#exception-batch-delete-form [name='type']").val());
-                    tree.treegrid('options').animate = false; 
-                    tree.treegrid('reload');
-                   
+                    reloadExceptionTree($("#exception-batch-delete-form [name='type']").val());
+
                     if (!$("#exception-batch-delete-form #all-approved").prop('checked')) {
-                        tree = $('#exception-table-unapproved');
-                        tree.treegrid('options').animate = false;
-                        tree.treegrid('reload');
+                        reloadExceptionTree('unapproved');
                     }
 
                     refreshAuditLogsIfOpen();

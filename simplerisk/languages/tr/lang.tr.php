@@ -2945,6 +2945,10 @@ $lang = array(
     'PurchaseExtraBody'                   => '{name} Ek Özelliği mevcut SimpleRisk lisansınıza dahil değildir. Daha fazla bilgi edinmek veya lisans satın almak için SimpleRisk Ek Özellikler sayfasını ziyaret edin.',
     'ViewExtras'                          => 'Ekstraları Görüntüle',
 
+    'MoveToActive'=>'Aktife Taşı',
+    'MoveToInactive'=>'Pasife Taşı',
+    'CantMoveIntoOwnChild'=>'Cannot move a node into its own descendant.',
+
     '' => '',
 );
 ?>

@@ -28,12 +28,28 @@ final class SeparationAccessTest extends IntegrationTestCase
             update_setting($flag, '1', $this->txdb);
             $this->clearSettingCache($flag);
         }
+
+        // Core's get_user_teams() reroutes non-admins through the Organizational
+        // Hierarchy extra's business-unit filter when OH is enabled
+        // (organizational_hierarchy setting = "1"), returning only teams in the
+        // user's selected business unit. The users below have no BU, so the
+        // team-overlap grant path would see an empty team list and wrongly deny.
+        // Disable OH for this test so team lookups use the plain user_to_team
+        // join that the separation grant logic is meant to exercise.
+        update_setting('organizational_hierarchy', 'false', $this->txdb);
+        $this->clearSettingCache('organizational_hierarchy');
+        unset($GLOBALS['organizational_hierarchy_extra']);
+
         $_SESSION = [];
     }
 
     protected function tearDown(): void
     {
         $_SESSION = [];
+        // Forget the OH memo so the next test re-reads from the rolled-back DB
+        // (back to "1") instead of inheriting this test's in-transaction 'false'.
+        unset($GLOBALS['organizational_hierarchy_extra']);
+        $this->clearSettingCache('organizational_hierarchy');
         parent::tearDown();
     }
 

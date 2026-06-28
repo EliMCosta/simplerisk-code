@@ -2945,6 +2945,10 @@ $lang = array(
     'PurchaseExtraBody'                   => 'Додатна ставка {name} није укључена у вашу тренутну лиценцу за SimpleRisk. Посетите страницу SimpleRisk Extras да бисте сазнали више или купили лиценцу.',
     'ViewExtras'                          => 'Погледајте додатке',
 
+    'MoveToActive'=>'Премести у Активно',
+    'MoveToInactive'=>'Премести у Неактивно',
+    'CantMoveIntoOwnChild'=>'Cannot move a node into its own descendant.',
+
     '' => '',
 );
 ?>

@@ -1060,15 +1060,18 @@ function display_initiate_audits() {
 			</div>
 		</div>
 		<div class='card-body border my-2'>
-			<table id='initiate_audit_treegrid'>
+			<table id='initiate_audit_treegrid' data-sr-tree width='100%'>
 				<thead>
-					<th data-options=\"field:'name'\" width='57%'>{$escaper->escapeHtml($lang['Name'])}</th>
-					<th data-options=\"field:'test_frequency'\"  width='8%'>{$escaper->escapeHtml($lang['TestFrequency'])}</th>
-					<th data-options=\"field:'last_audit_date'\"  width='10%'>{$escaper->escapeHtml($lang['LastAuditDate'])}</th>
-					<th data-options=\"field:'next_audit_date'\"  width='10%'>{$escaper->escapeHtml($lang['NextAuditDate'])}</th>
-					<th data-options=\"field:'status'\"  width='5%'>{$escaper->escapeHtml($lang['Status'])}</th>
-					<th data-options=\"field:'action'\" width='10%'>&nbsp;</th>
+					<tr>
+					<th data-field=\"name\" width='57%'>{$escaper->escapeHtml($lang['Name'])}</th>
+					<th data-field=\"test_frequency\"  width='8%'>{$escaper->escapeHtml($lang['TestFrequency'])}</th>
+					<th data-field=\"last_audit_date\"  width='10%'>{$escaper->escapeHtml($lang['LastAuditDate'])}</th>
+					<th data-field=\"next_audit_date\"  width='10%'>{$escaper->escapeHtml($lang['NextAuditDate'])}</th>
+					<th data-field=\"status\"  width='5%'>{$escaper->escapeHtml($lang['Status'])}</th>
+					<th data-field=\"action\" width='10%'>&nbsp;</th>
+				</tr>
 				</thead>
+				<tbody></tbody>
 			</table>
 		</div>
         		
@@ -1076,7 +1079,7 @@ function display_initiate_audits() {
 
             // Redraw Past Audit table
             function redraw(){
-                $('#initiate_audit_treegrid').treegrid('reload');
+                var t = $('#initiate_audit_treegrid'); if ($.fn.dataTable.isDataTable(t)) { t.reloadSrTree(); }
             } 
 
             // timer identifier
@@ -1203,11 +1206,28 @@ function display_active_audits() {
 
 }
 
+/*************************************************
+ * FUNCTION: GET INITIATED AUDIT STATUS SETTING *
+ *************************************************/
+function get_initiated_audit_status() {
+
+    $setting = get_setting("initiated_audit_status");
+
+    // When unset, default to the first workflow status (Pending Evidence)
+    // instead of 0, which is not a valid test_status value.
+    if ($setting === false || $setting === null || $setting === '') {
+        return 1;
+    }
+
+    return (int)$setting;
+
+}
+
 /************************************
  * INITIATE FRAMEWORK CONTROL TESTS *
  ************************************/
 function initiate_framework_control_tests($type, $id, $tags=[]){
-    $initiated_audit_status = get_setting("initiated_audit_status") ? get_setting("initiated_audit_status") : 0;
+    $initiated_audit_status = get_initiated_audit_status();
 
      // If team separation is enabled
     if (team_separation_extra()) {
@@ -2998,6 +3018,40 @@ function reopen_test_audit($test_audit_id)
     return true;
 }
 
+/*******************************************************
+ * FUNCTION: FRAMEWORK MATCHES INITIATE AUDITS FILTER *
+ *******************************************************/
+function framework_matches_initiate_audit_filter($framework_value, $filter_by_framework, $framework_by_value) {
+
+    $framework_value = (int)$framework_value;
+
+    if (empty($filter_by_framework)) {
+        return true;
+    }
+
+    foreach ($filter_by_framework as $selected) {
+        if ((int)$selected === $framework_value) {
+            return true;
+        }
+
+        $current = (int)$selected;
+        while ($current) {
+            if ($current === $framework_value) {
+                return true;
+            }
+
+            if (!isset($framework_by_value[$current])) {
+                break;
+            }
+
+            $current = (int)($framework_by_value[$current]['parent'] ?? 0);
+        }
+    }
+
+    return false;
+
+}
+
 /******************************************************
  * FUNCTION: GET FRAMEWORKS FROM INITIATE AUDITS PAGE *
  ******************************************************/
@@ -3129,13 +3183,20 @@ function get_initiate_frameworks_by_filter($filter_by_text, $filter_by_status, $
     // Only show top-level framework nodes (e.g. SCF root), not child frameworks
     // whose parent is also in the list — matches the governance framework tree.
     $all_values = array_column($unique_frameworks, 'value');
+    $framework_by_value = array();
+    foreach ($unique_frameworks as $unique_framework) {
+        $framework_by_value[(int)$unique_framework['value']] = $unique_framework;
+    }
     $ids = array();
     foreach ($unique_frameworks as $filtered_framework) {
         $parent = (int)($filtered_framework['parent'] ?? 0);
         if ($parent !== 0 && in_array($parent, $all_values, true)) {
             continue;
         }
-        if (!in_array($filtered_framework['value'], $ids) && in_array($filtered_framework['value'], $filter_by_framework)) {
+        // The filter multiselect lists leaf frameworks only; top-level parents (e.g.
+        // SCF root) must still appear when a selected descendant has tests.
+        if (!in_array($filtered_framework['value'], $ids)
+            && framework_matches_initiate_audit_filter($filtered_framework['value'], $filter_by_framework, $framework_by_value)) {
             $results[] = $filtered_framework;
             $ids[] = $filtered_framework['value'];
         }
@@ -3748,7 +3809,7 @@ function get_tests_to_auto_initiate() {
  *********************************************/
 function run_auto_initiate_test_cron() {
     
-    $initiated_audit_status = get_setting("initiated_audit_status") ? get_setting("initiated_audit_status") : 0;
+    $initiated_audit_status = get_initiated_audit_status();
 
     // get all tests that need to be initiated automatically 
     // which have audit_initiation_offset not null and today should be between next_audit_date - audit_initiation_offset and next_audit_date and there is no initiated audit between next-audit_date - audit_initiation_offset and next_audit_date

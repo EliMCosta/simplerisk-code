@@ -5,7 +5,7 @@
 
     // Render the header and sidebar
     require_once(realpath(__DIR__ . '/../includes/renderutils.php'));
-    render_header_and_sidebar(['tabs:logic', 'easyui', 'datatables' ,'datatables:rowgroup', 'datatables:rowreorder', 'CUSTOM:common.js'], ['check_admin' => true]);
+    render_header_and_sidebar(['tabs:logic', 'datatables' ,'datatables:rowgroup', 'datatables:rowreorder', 'CUSTOM:common.js'], ['check_admin' => true]);
 
 ?>
 <div class="row risk_thread_catalog">

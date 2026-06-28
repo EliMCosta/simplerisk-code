@@ -2945,6 +2945,10 @@ $lang = array(
     'PurchaseExtraBody'                   => 'A funcionalidade extra {name} não está incluída na sua licença atual do SimpleRisk. Visite a página de características extra do SimpleRisk para saber mais ou adquirir uma licença.',
     'ViewExtras'                          => 'Ver informações adicionais',
 
+    'MoveToActive'=>'Mover para Ativo',
+    'MoveToInactive'=>'Mover para Inativo',
+    'CantMoveIntoOwnChild'=>'Cannot move a node into its own descendant.',
+
     '' => '',
 );
 ?>

@@ -2945,6 +2945,10 @@ $lang = array(
     'PurchaseExtraBody'                   => 'Додатковий компонент {name} не входить до вашої поточної ліцензії SimpleRisk. Відвідайте сторінку «Додаткові компоненти SimpleRisk», щоб дізнатися більше або придбати ліцензію.',
     'ViewExtras'                          => 'Переглянути додаткові послуги',
 
+    'MoveToActive'=>'Перемістити в Активні',
+    'MoveToInactive'=>'Перемістити в Неактивні',
+    'CantMoveIntoOwnChild'=>'Cannot move a node into its own descendant.',
+
     '' => '',
 );
 ?>

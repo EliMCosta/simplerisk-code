@@ -2452,6 +2452,10 @@ function upgrade_from_20180104001($db){
     echo "Setting the default closed audit status in the settings table.<br />\n";
     update_setting("closed_audit_status", 5);
 
+    // Default status for newly initiated audits (Pending Evidence)
+    echo "Setting the default initiated audit status in the settings table.<br />\n";
+    update_setting("initiated_audit_status", 1);
+
     // Set the session last activity timeout
     echo "Creating a database setting for the session last activity timeout.<br />\n";
     set_session_last_activity_timeout();
@@ -7630,8 +7634,10 @@ function upgrade_from_20240909001($db)
 
     // Compile the list of unnecessary directories
     echo "Removing unnecessary directories.<br />\n";
+    // Remove the now-unused EasyUI vendor assets (EasyUI was replaced by DataTables)
     $remove_directories = [
-        realpath(__DIR__ . '/js/easyui'),
+        realpath(__DIR__ . '/../vendor/simplerisk/jeasyui'),
+        realpath(__DIR__ . '/../css/easyui'),
     ];
 
     // Remove the unnecessary directories
@@ -10299,6 +10305,25 @@ function upgrade_from_20260422001($db) {
     if (!index_exists_on_table('framework_control_tests_framework_control_id_idx', 'framework_control_tests')) {
         echo "Adding index on `framework_control_tests`.`framework_control_id`.<br />\n";
         $stmt = $db->prepare("CREATE INDEX framework_control_tests_framework_control_id_idx ON `framework_control_tests`(`framework_control_id`);");
+        $stmt->execute();
+    }
+
+    // Default initiated audit status when never configured. Without this,
+    // initiate_test_audit() wrote status 0, which is not in test_status and
+    // hides rows from Active Audits.
+    if (get_setting('initiated_audit_status') === false) {
+        echo "Seeding initiated_audit_status setting with default value 1.<br />\n";
+        update_setting('initiated_audit_status', 1);
+    }
+
+    // Normalize audits stuck at status 0. Status 0 is never a valid test_status
+    // value: it was written by the legacy initiate_test_audit() bug above, AND
+    // it is the sentinel set by delete_value('test_status') in
+    // includes/functions.php when a test_status option is removed (orphaned
+    // audits). Leave NULL untouched — that is a separate, ambiguous state.
+    if (table_exists('framework_control_test_audits')) {
+        echo "Repairing audits created with invalid status 0.<br />\n";
+        $stmt = $db->prepare("UPDATE `framework_control_test_audits` SET `status` = 1 WHERE `status` = 0");
         $stmt->execute();
     }
 

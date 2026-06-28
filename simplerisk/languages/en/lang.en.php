@@ -2945,6 +2945,12 @@ $lang = array(
     'PurchaseExtraBody'                   => 'The {name} Extra is not included in your current SimpleRisk license. Visit the SimpleRisk Extras page to learn more or purchase a license.',
     'ViewExtras'                          => 'View Extras',
 
+    // Framework status toggle (governance framework tree) — replaces the old
+    // EasyUI "drag onto the Active/Inactive tab" interaction.
+    'MoveToActive'                        => 'Move to Active',
+    'MoveToInactive'                      => 'Move to Inactive',
+    'CantMoveIntoOwnChild'                => 'Cannot move a node into its own descendant.',
+
     '' => '',
 );
 ?>

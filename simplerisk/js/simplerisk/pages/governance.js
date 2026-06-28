@@ -1,295 +1,192 @@
 $.fn.extend({
-	initAsFrameworkTreegrid: function(status, editable) {
-		// Can't initialize it twice
+		initAsFrameworkTreegrid: function(status, editable) {
+		// Already initialized: refresh the data instead of no-op'ing, matching
+		// the document/exception tree helpers.
 		if (this.data('initialized')) {
+			try { this.DataTable().ajax.reload(); } catch (e) {}
 			return;
 		}
 
 		let tabs = this.parents('.tab-pane');
 		let activeTabs = this.parents('.tab-pane.active');
 
-		// Can't initialize if not all of the parent tabs(if there's any) active
-		// because the treegrid doesn't properly initialize in the background
+		// DataTables (like EasyUI before it) does not initialize correctly while
+		// hidden in an inactive tab, so defer until the owning tab is shown.
 		if (tabs.length != activeTabs.length) {
 			return;
 		}
 
-        this.treegrid({
-            dropAccept:status == 2 ? 'nope' : '',
-            animate: true,
-            collapsible: false,
-            fitColumns: true,
-            url: BASE_URL + '/api/v2/governance/frameworks/treegrid?status=' + status,
-            method: 'get',
-            async: false,
+        this.simpleriskTree({
             idField: 'value',
             treeField: 'name',
-            scrollbarSize: 0,
-            onLoadSuccess: function(row, data){
-				if (editable) {
-                	$(this).treegrid('enableDnd', row?row.value:null);
-                }
-    			if (status==1) {
-                    $('#active-frameworks-count').html(data.totalCount);
-                    // $('#frameworks-count').html(data.totalCount + parseInt($('#inactive-frameworks-count').html()));
-                    // Add the status as a class so the tab headers can decide whether to accept the drop or not
-                    // it's to be able to only accept drops that 'make sense' meaning no drops with the status the
-                    // framework already has
-                    $('#active-frameworks .datagrid-row.droppable').addClass(''+status);
-			    } else {
-                    $('#inactive-frameworks-count').html(data.totalCount);
-                    // $('#frameworks-count').html(data.totalCount + parseInt($('#active-frameworks-count').html()));
-                    // Add the status as a class so the tab headers can decide whether to accept the drop or not
-                    // it's to be able to only accept drops that 'make sense' meaning no drops with the status the
-                    // framework already has
-                    $('#inactive-frameworks .datagrid-row.droppable').addClass(''+status);
-		    	}
-		    	
-                //fixTreeGridCollapsableColumn();
+            expandAll: true,
+            ajax: {
+                url: BASE_URL + '/api/v2/governance/frameworks/treegrid?status=' + status
             },
-            onStopDrag: function(row){
-                var tag = document.elementFromPoint(mouseX - window.pageXOffset, mouseY - window.pageYOffset);
-                
-                if($(tag).hasClass('nav-link')){
-                    var data_status = $(tag).data('status');
-                    if (data_status == status) { // Don't accept dropping a framework on its current status' tab
-                        return;
-                    }
-
-                    var framework_id = row.value;
-                    $.ajax({
-                        url: BASE_URL + '/api/v2/governance/update_framework_status',
-                        type: 'POST',
-                        data: {framework_id : framework_id, status:data_status},
-                        success : function (data){
-                            setTimeout(function(){
-                                location.reload();
-                            }, 100)
-                        },
-                        error: function(xhr,status,error){
-                            if(!retryCSRF(xhr, this))
-                            {
-                            }
-                        }
-                    });
-                }
-            },
-            onBeforeDrop: function(targetRow, sourceRow,point){
-                // Don't let it drop 'between' the rows as it's confusing
-                return point=='append';
-            },
-            onDrop: function(targetRow, sourceRow){
-                var parent = targetRow ? targetRow.value : 0;
-                var framework_id = sourceRow.value;
-                  $.ajax({
+            // Drag-to-reparent is only enabled when the user may modify frameworks
+            dnd: editable ? {
+                reparent: {
                     url: BASE_URL + '/api/v2/governance/update_framework_parent',
-                    type: 'POST',
-                    data: {parent : parent, framework_id:framework_id},
-                    success: function(data){
-                        if(data.status_message){
-                            showAlertsFromArray(data.status_message);
-                        }
-                        $('.framework-table-' + status).treegrid('reload');
-                    },
-                    error: function(xhr,status,error) {
-                        if(!retryCSRF(xhr, this)) {
-                            if(xhr.responseJSON && xhr.responseJSON.status_message){
-                                showAlertsFromArray(xhr.responseJSON.status_message);
-                                setTimeout(function(){
-                                    location.reload();
-                                }, 100);
-                            }
-                        }
-                    }
-                });
+                    idParam: 'framework_id',
+                    parentParam: 'parent'
+                }
+            } : false,
+            columns: [
+                { data: 'name', width: '20%' },
+                { data: 'description', width: '70%' },
+                { data: 'actions', orderable: false, searchable: false, className: 'text-center', width: '10%' }
+            ],
+            onLoad: function(api, json){
+                if (!json) return;
+                var totalCount = (json.totalCount != null) ? json.totalCount : 0;
+                if (status == 1) {
+                    $('#active-frameworks-count').html(totalCount);
+                } else {
+                    $('#inactive-frameworks-count').html(totalCount);
+                }
             }
         });
         $(this).data('initialized', true);
 	},
 
-    initAsDocumentProgramTreegrid: function(type=false) {
-
+        initAsDocumentProgramTreegrid: function(type=false) {
         // Can't initialize it twice
         if (this.data('initialized')) {
-            this.treegrid("resize");
+            try { this.DataTable().ajax.reload(); } catch (e) {}
             return;
         }
 
         let tabs = this.parents('.tab-pane');
         let activeTabs = this.parents('.tab-pane.active');
 
-        // Can't initialize if not all of the parent tabs(if there's any) active
-        // because the treegrid doesn't properly initialize in the background
+        // DataTables (like EasyUI before it) does not initialize correctly while
+        // hidden in an inactive tab, so defer until the owning tab is shown.
         if (tabs.length != activeTabs.length) {
             return;
         }
 
-        let _this = this;
-        
-        this.treegrid({
-            iconCls: 'icon-ok',
-            animate: true,
-            collapsible: false,
-            fitColumns: true,
-            url: BASE_URL + (type === 'document-hierarchy' ? '/api/v2/governance/documents/treegrid?type=' : `/api/v2/governance/tabular_documents?type=${type}`),
-            method: 'get',
+        let isHierarchy = (type === 'document-hierarchy');
+        let columns = [
+            { data: 'document_name', width: isHierarchy ? '25%' : '23%' },
+            { data: 'document_type', width: '10%' },
+            { data: 'framework_names', width: isHierarchy ? '20%' : '18%' },
+            { data: 'control_names', width: isHierarchy ? '20%' : '18%' },
+            { data: 'submitted_by', width: isHierarchy ? '10%' : '8%' },
+            { data: 'updated_by', width: isHierarchy ? '10%' : '8%' },
+            { data: 'creation_date', width: '9%' },
+            { data: 'approval_date', width: '9%' },
+            { data: 'status', width: isHierarchy ? '7%' : '6%' }
+        ];
+        if (!isHierarchy) {
+            columns.push({ data: 'actions', orderable: false, searchable: false, className: 'text-center', width: '7%' });
+        }
+
+        this.simpleriskTree({
             idField: 'id',
             treeField: 'document_name',
-            remoteFilter: true,
-            scrollbarSize: 0,
-            onResize: function() {
-                // After rendering the datagrid filter head row, reduce the editable filter inputs' width by 30px
-                // so that could make the datagrid table filter head row have the same width as the datagrid table body
-                $('.datagrid-htable .datagrid-filter-row .datagrid-filter', this).each((i, e) => {
-                    $(e).css('width', (parseInt($(e).css('width'))-30) + 'px');
-                });
+            expandAll: false,
+            ajax: {
+                url: BASE_URL + (isHierarchy ? '/api/v2/governance/documents/treegrid?type=' : ('/api/v2/governance/tabular_documents?type=' + type))
             },
-            onLoadSuccess: function(){
-                // Run the resize logic when the data is loaded
-                $(_this).treegrid('resize');
-
-                // Set custom placeholders
-                const filterRow = $('.datagrid-filter-row');
-
-                filterRow.find('input[name="document_name"]').attr('placeholder', _lang['DocumentName']);
-                filterRow.find('input[name="document_type"]').attr('placeholder', _lang['DocumentType']);
-                filterRow.find('input[name="framework_names"]').attr('placeholder', _lang['ControlFrameworks']);
-                filterRow.find('input[name="control_names"]').attr('placeholder', _lang['Controls']);
-                filterRow.find('input[name="submitted_by"]').attr('placeholder', _lang['Submitter']);
-                filterRow.find('input[name="updated_by"]').attr('placeholder', _lang['UpdatedBy']);
-                filterRow.find('input[name="creation_date"]').attr('placeholder', _lang['CreationDate']);
-                filterRow.find('input[name="approval_date"]').attr('placeholder', _lang['ApprovalDate']);
-                filterRow.find('input[name="status"]').attr('placeholder', _lang['Status']);
-
-            },
-            onCollapse: function() {
-                // Run the resize logic when the data is loaded
-                $(_this).treegrid('resize');
-            },
-            onExpand: function() {
-                // Run the resize logic when the data is loaded
-                $(_this).treegrid('resize');
-            },
-        }).treegrid('enableFilter', [{
-            field:'actions',
-            type:'label'
-        }]);
-
+            columns: columns,
+            onLoad: function (api) {
+                applyDocumentTreeFilterPlaceholders($(api.table().node()));
+            }
+        });
         $(this).data('initialized', true);
     },
-    
-    initAsExceptionTreegrid: function(type=false) {
+
+        initAsExceptionTreegrid: function(type=false) {
         // Can't initialize it twice
         if (this.data('initialized')) {
-            this.treegrid("resize");
+            try { this.DataTable().ajax.reload(); } catch (e) {}
             return;
         }
 
         let tabs = this.parents('.tab-pane');
         let activeTabs = this.parents('.tab-pane.active');
-
-        // Can't initialize if not all of the parent tabs(if there's any) active
-        // because the treegrid doesn't properly initialize in the background
         if (tabs.length != activeTabs.length) {
             return;
         }
 
-        let _this = this;
-        this.treegrid({
-            iconCls: 'icon-ok',
-            animate: false,
-            fitColumns: true,
-            nowrap: true,
-            url: BASE_URL + `/api/v2/exceptions/tree?type=${type}`,
-            method: 'get',
+        this.simpleriskTree({
             idField: 'value',
             treeField: 'name',
-            scrollbarSize: 0,
-            remoteFilter: true,
-            onResize: function() {
-                // After rendering the datagrid filter head row, reduce the editable filter inputs' width by 30px
-                // so that could make the datagrid table filter head row have the same width as the datagrid table body
-                $('.datagrid-htable .datagrid-filter-row .datagrid-filter', this).each((i, e) => {
-                    $(e).css('width', (parseInt($(e).css('width'))-30) + 'px');
-                });
+            expandAll: false,
+            ajax: {
+                url: BASE_URL + '/api/v2/exceptions/tree?type=' + type
             },
-            loadFilter: function(data, parentId) {
-                return data.data
-            },
-            onLoadSuccess: function(row, data){
-                // Run the resize logic when the data is loaded
-                $(_this).treegrid('resize');
-
-                // fixTreeGridCollapsableColumn();
-
-                // Set custom placeholders
-                const filterRow = $('.datagrid-filter-row');
-
-                filterRow.find('input[name="name"]').attr('placeholder', _lang['ExceptionName']);
-                filterRow.find('input[name="exception_id"]').attr('placeholder', _lang['ID']);
-                filterRow.find('input[name="description"]').attr('placeholder', _lang['Description']);
-                filterRow.find('input[name="justification"]').attr('placeholder', _lang['Justification']);
-                filterRow.find('input[name="next_review_date"]').attr('placeholder', _lang['NextReviewDate']);
-
-                // Set the max length of the text inputs in the filter row
-                filterRow.find('input[name="name"]').attr('maxlength', 100);
-                filterRow.find('input[name="exception_id"]').attr('maxlength', 100);
-                filterRow.find('input[name="description"]').attr('maxlength', 100);
-                filterRow.find('input[name="justification"]').attr('maxlength', 100);
-                filterRow.find('input[name="next_review_date"]').attr('maxlength', 100);
-
-                // Refresh exception counts in the tabs
+            // defaultContent: '' — the exception tree is heterogeneous: parent
+            // rows are policy/control group headers (only value/name/actions),
+            // leaf rows are the actual exceptions. Without defaultContent,
+            // DataTables throws TN/4 ("Requested unknown parameter") on the
+            // header rows for the leaf-only columns. EasyUI tolerated the
+            // missing fields; DataTables needs an explicit fallback.
+            columns: [
+                { data: 'name', defaultContent: '', width: '24%' },
+                { data: 'exception_id', defaultContent: '', width: '7%' },
+                { data: 'status', defaultContent: '', width: '7%' },
+                { data: 'description', defaultContent: '', width: '23%' },
+                { data: 'justification', defaultContent: '', width: '23%' },
+                { data: 'next_review_date', defaultContent: '', width: '9%' },
+                { data: 'actions', defaultContent: '', orderable: false, searchable: false, className: 'text-center', width: '7%' }
+            ],
+            onLoad: function(api, json){
+                if (!json) return;
+                applyExceptionTreeFilterPlaceholders($(api.table().node()), type);
+                // Count the leaf exceptions (children of each parent node)
+                var rows = (json.data != null) ? json.data : (Array.isArray(json) ? json : []);
                 var totalCount = 0;
-                data = Array.isArray(data) ? data : data.rows;
-                if((data && data.length))
-                {
-                    for(var i = 0; i < data.length; i++)
-                    {
-                        var parent = data[i];
-                        if((parent.children && parent.children.length))
-                        {
-                            totalCount += parent.children.length;
-                        }
+                for (var i = 0; i < rows.length; i++) {
+                    if (rows[i].children && rows[i].children.length) {
+                        totalCount += rows[i].children.length;
                     }
                 }
-
-                $(`#${type}-exceptions-count`).text(totalCount);
-
+                $('#' + type + '-exceptions-count').text(totalCount);
                 if (typeof wireActionButtons === 'function') {
                     wireActionButtons(type);
                 }
             }
-        }).treegrid('enableFilter', [
-            {
-                field: 'status',
-                type: 'select',
-                options: {
-                    name: 'status',
-                    url: BASE_URL + '/api/v2/exceptions/status',
-                    defaultOption: {value: '', name: _lang['All']},
-                    onChange: function(value){
-                        if (value == '') {
-                            _this.treegrid('removeFilterRule', 'status_value');
-                        } else {
-                            _this.treegrid('addFilterRule', {
-                                field: 'status_value',
-                                op: 'equal',
-                                value: value
-                            });
-                        }
-                        _this.treegrid('doFilter');
-                    }
-                }
-            },
-            {
-                field:'actions',
-                type:'label'
-            }
-        ]);
-
+        });
         $(this).data('initialized', true);
-    }
+    },
 });
+
+
+
+function applyDocumentTreeFilterPlaceholders($table) {
+    if (typeof _lang === 'undefined' || !_lang) return;
+    $table.find('thead input[data-sr-filter="document_name"]').attr('placeholder', _lang['DocumentName']);
+    $table.find('thead input[data-sr-filter="document_type"]').attr('placeholder', _lang['DocumentType']);
+    $table.find('thead input[data-sr-filter="framework_names"]').attr('placeholder', _lang['ControlFrameworks']);
+    $table.find('thead input[data-sr-filter="control_names"]').attr('placeholder', _lang['Controls']);
+    $table.find('thead input[data-sr-filter="submitted_by"]').attr('placeholder', _lang['Submitter']);
+    $table.find('thead input[data-sr-filter="updated_by"]').attr('placeholder', _lang['UpdatedBy']);
+    $table.find('thead input[data-sr-filter="creation_date"]').attr('placeholder', _lang['CreationDate']);
+    $table.find('thead input[data-sr-filter="approval_date"]').attr('placeholder', _lang['ApprovalDate']);
+    $table.find('thead input[data-sr-filter="status"]').attr('placeholder', _lang['Status']);
+}
+
+function applyExceptionTreeFilterPlaceholders($table, type) {
+    if (typeof _lang === 'undefined' || !_lang) return;
+    var nameKey = type === 'policy' ? 'PolicyExceptionName' : (type === 'control' ? 'ControlExceptionName' : 'ExceptionName');
+    $table.find('thead input[data-sr-filter="name"]').attr('placeholder', _lang[nameKey] || _lang['ExceptionName']);
+    $table.find('thead input[data-sr-filter="exception_id"]').attr('placeholder', _lang['ID']).attr('maxlength', 100);
+    $table.find('thead input[data-sr-filter="description"]').attr('placeholder', _lang['Description']).attr('maxlength', 100);
+    $table.find('thead input[data-sr-filter="justification"]').attr('placeholder', _lang['Justification']).attr('maxlength', 100);
+    $table.find('thead input[data-sr-filter="next_review_date"]').attr('placeholder', _lang['NextReviewDate']).attr('maxlength', 100);
+    $table.find('thead input[data-sr-filter="name"]').attr('maxlength', 100);
+}
+
+function reloadExceptionTree(type) {
+    $('#exception-table-' + type).reloadSrTree();
+}
+
+function reloadExceptionTrees(types) {
+    for (var i = 0; i < types.length; i++) {
+        reloadExceptionTree(types[i]);
+    }
+}
 
 
 
@@ -322,7 +219,7 @@ jQuery(document).ready(function($){
             // Event handler when clicking 
             // the edit framework button on Governance > Define Framework Controls page
             // and the framework name link on the Compliance > Initiate Audits page
-            $("body").on("click", ".framework-block--edit, .framework-name", function() {
+            $("body").on("click", ".framework-block--edit, .framework-name", function(event) {
 
                 event.preventDefault();
                 resetForm('#framework--update form');
@@ -364,6 +261,34 @@ jQuery(document).ready(function($){
                     }
                 });
             });
+
+          // Toggle a framework between Active and Inactive (replaces the old
+          // EasyUI "drag a row onto the Active/Inactive tab" status change).
+          $(document).on('click', '.framework-block--toggle-status', function(event) {
+            event.preventDefault();
+            var framework_id = $(this).attr('data-id');
+            var status = $(this).attr('data-status');
+            $.ajax({
+                url: BASE_URL + '/api/v2/governance/update_framework_status',
+                type: 'POST',
+                data: { framework_id: framework_id, status: status },
+                success: function (data) {
+                    if (data && data.status_message) {
+                        showAlertsFromArray(data.status_message);
+                    }
+                    setTimeout(function () {
+                        location.reload();
+                    }, 100);
+                },
+                error: function (xhr) {
+                    if (!retryCSRF(xhr, this)) {
+                        if (xhr.responseJSON && xhr.responseJSON.status_message) {
+                            showAlertsFromArray(xhr.responseJSON.status_message);
+                        }
+                    }
+                }
+            });
+          });
 
           $(document).on('click', '.framework-block--delete', function(event) {
             event.preventDefault();
@@ -1137,17 +1062,6 @@ $(function(){
 
     
 });
-//Function to give some margin to the text-spans in the collapsable column to
-//force a reflow in case a text is overflowing
-function fixTreeGridCollapsableColumn() {
-    $(".datagrid .datagrid-row>td:first-child>div").each(function() {
-        if ($(this)[0].scrollWidth >  $(this).innerWidth()) {
-            var indentCount = $(this).find('.tree-indent, .tree-hit').length;
-            $(this).find('.tree-title').css('margin-right', (indentCount * 7) + 'px');
-        };
-    });
-}
-
 function setupAssetsAssetGroupsWidget(select_tag, control_id, control_maturity) {
 
     if (!select_tag.length)

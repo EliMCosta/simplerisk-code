@@ -57,9 +57,9 @@ User card page
       top: 50%;
       left: 0;
       right: 0;
-      transform: translateY(-50%) translateZ(0);
       -webkit-transform: translateY(-50%) translateZ(0);
       -ms-transform: translateY(-50%) translateZ(0);
+      transform: translateY(-50%) translateZ(0);
       .el-item {
         list-style: none;
         display: inline-block;

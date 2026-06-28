@@ -151,6 +151,7 @@ Down arrow
     border-color: $sr-sidebar-text;
     margin-left: 10px;
     -webkit-transform: rotate(135deg) translate(0, -50%);
+    -moz-transform: rotate(135deg) translate(0, -50%);
     -ms-transform: rotate(135deg) translate(0, -50%);
     -o-transform: rotate(135deg) translate(0, -50%);
     transform: rotate(135deg) translate(0, -50%);
@@ -170,6 +171,7 @@ Down arrow
 .sidebar-nav li > .has-arrow.active::after,
 .sidebar-nav .has-arrow[aria-expanded="true"]::after {
   -webkit-transform: rotate(-135deg) translate(0, -50%);
+  -moz-transform: rotate(-135deg) translate(0, -50%);
   -ms-transform: rotate(-135deg) translate(0, -50%);
   -o-transform: rotate(-135deg) translate(0, -50%);
   transform: rotate(-135deg) translate(0, -50%);

@@ -1,17 +1,13 @@
 $.fn.extend({
-    initAsAssociatedExceptionTreegrid: function(type=false) {
-
+        initAsAssociatedExceptionTreegrid: function(type=false) {
         // Can't initialize it twice
         if (this.data('initialized')) {
-            this.treegrid("resize");
+            try { this.DataTable().ajax.reload(); } catch (e) {}
             return;
         }
 
         let tabs = this.parents('.tab-pane');
         let activeTabs = this.parents('.tab-pane.active');
-
-        // Can't initialize if not all of the parent tabs(if there's any) active
-        // because the treegrid doesn't properly initialize in the background
         if (tabs.length != activeTabs.length) {
             return;
         }
@@ -19,46 +15,42 @@ $.fn.extend({
         var tabContainer = $(this).parents('.tab-data');
         var risk_id = $('.risk-id', tabContainer).html();
 
-        this.treegrid({
-            iconCls: 'icon-ok',
-            animate: false,
-            fitColumns: true,
-            nowrap: true,
-            url: BASE_URL + `/api/v2/associated-exceptions/tree?type=${type}&id=${risk_id}`,
-            method: 'get',
+        this.simpleriskTree({
             idField: 'value',
             treeField: 'name',
-            scrollbarSize: 0,
-            loadFilter: function(data, parentId) {
-                return data.data;
+            expandAll: false,
+            ajax: {
+                url: BASE_URL + '/api/v2/associated-exceptions/tree?type=' + type + '&id=' + risk_id
             },
-            onLoadSuccess: function(row, data){
-                // fixTreeGridCollapsableColumn();
-                // Refresh exception counts in the tabs
+            // defaultContent: '' — parent rows are policy/control group headers
+            // (only value/name/children); leaf rows carry the exception fields.
+            // Without defaultContent DataTables throws TN/4 on header rows.
+            columns: [
+                { data: 'name', defaultContent: '', width: '25%' },
+                { data: 'status', defaultContent: '', width: '8%' },
+                { data: 'description', defaultContent: '', width: '25%' },
+                { data: 'justification', defaultContent: '', width: '24%' },
+                { data: 'next_review_date', defaultContent: '', width: '18%' }
+            ],
+            onLoad: function(api, json){
+                if (!json) return;
+                var rows = (json.data != null) ? json.data : (Array.isArray(json) ? json : []);
                 var totalCount = 0;
-                if((data && data.length))
-                {
-                    for(var i = 0; i < data.length; i++)
-                    {
-                        var parent = data[i];
-                        if((parent.children && parent.children.length))
-                        {
-                            totalCount += parent.children.length;
-                        }
+                for (var i = 0; i < rows.length; i++) {
+                    if (rows[i].children && rows[i].children.length) {
+                        totalCount += rows[i].children.length;
                     }
                 }
-                
-                $(`#${type}-exceptions-count`).text(totalCount);
-
+                $('#' + type + '-exceptions-count').text(totalCount);
                 if (typeof wireActionButtons === 'function') {
                     wireActionButtons(type);
                 }
             }
         });
-
         $(this).data('initialized', true);
     }
 });
+
 
 var current_tab_close_object;
 

@@ -70,7 +70,11 @@ final class ApiKeyMgmtTest extends IntegrationTestCase
 
     public function test_user_keys_allowed_toggle_round_trips(): void
     {
-        // Default off (fresh install stays admin-only).
+        // Default off: a missing row reads as off. Delete any live row first
+        // (rolled back by the test transaction) so this assertion is independent
+        // of whether an admin has enabled self-service at runtime.
+        $this->txdb->prepare("DELETE FROM settings WHERE name = 'api_allow_user_keys'")->execute();
+        $this->clearSettingCache('api_allow_user_keys');
         self::assertFalse(api_user_keys_allowed());
 
         api_set_user_keys_allowed(true);

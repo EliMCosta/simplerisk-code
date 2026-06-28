@@ -96,7 +96,7 @@ function makeTree($olds, $parent, &$news, &$count=0){
  * FUNCTION: GET FRAMEWORK DATA IN TREE FORMAT *
  ***********************************************/
 function get_frameworks_as_treegrid($status) {
-    global $escaper;
+    global $lang, $escaper;
 
     // Include the required file
     require_once(realpath(__DIR__ . '/../extras/complianceforgescf/index.php'));
@@ -107,14 +107,21 @@ function get_frameworks_as_treegrid($status) {
     foreach($frameworks as &$framework){
         $framework_value = (int)$framework['value'];
         $framework['name'] = $escaper->escapeHtml($framework['name']);
+        // The "Move to Active/Inactive" toggle replaces the old EasyUI
+        // "drag a row onto the Active/Inactive tab" status change.
+        $target_status = $status == 1 ? 2 : 1;
+        $toggle_title = $status == 1 ? $lang['MoveToInactive'] : $lang['MoveToActive'];
         $framework['actions'] = "
             <div class='d-flex justify-content-center align-items-center w-100'>
-                <a class='framework-block--edit' data-id='{$framework_value}'>
+                <a class='framework-block--toggle-status mx-1' data-id='{$framework_value}' data-status='{$target_status}' title='" . $escaper->escapeHtml($toggle_title) . "'>
+                    <i class='fa fa-exchange-alt'></i>
+                </a>
+                <a class='framework-block--edit mx-1' data-id='{$framework_value}'>
                     <i class='fa fa-edit'></i>
                 </a>" .
         (  // The root complianceforge framework can't be deleted
             $scf_framework_id && $scf_framework_id === $framework_value ? "" : "
-                <a class='framework-block--delete' data-id='{$framework_value}'>
+                <a class='framework-block--delete mx-1' data-id='{$framework_value}'>
                     <i class='fa fa-trash'></i>
                 </a>"
         ) . "
@@ -238,42 +245,37 @@ function update_framework_status($status, $framework_id)
     }
     // If framework is active
     elseif($status == 1){
-        $results = array();
-        
-        get_parent_frameworks($frameworks, $framework['parent'], $results);
-        
-        if($results){
-            array_push($results, $framework);
-            array_walk_recursive($results,  function($value, $key) use($status, $db, &$result_ids){
-                if($key == "value"){
+        // Activating a framework must cascade DOWN to its descendants, mirroring
+        // the deactivation branch above. Without this, deactivating a parent
+        // (which marks every child inactive) and then reactivating the parent
+        // would leave every child inactive — forcing the user to reactivate each
+        // one individually and making the children appear unlinked from the parent.
+        $descendants = array();
+        makeTree($frameworks, $framework_id, $descendants);
 
-                    // Query the database
-                    $stmt = $db->prepare("UPDATE `frameworks` SET `status` = :status WHERE `value` = :framework_id");
-                    $stmt->bindParam(":framework_id", $value, PDO::PARAM_INT);
-                    $stmt->bindParam(":status", $status, PDO::PARAM_INT);
-                    
-                    // Update status
-                    $stmt->execute();
-                    
-                    $result_ids[] = $value;
-                }
-            });
-            if($results[0]['parent'] != 0){
+        // A framework also cannot sit active beneath an inactive parent, so cascade
+        // UP and activate every ancestor too.
+        $ancestors = array();
+        get_parent_frameworks($frameworks, $framework['parent'], $ancestors);
+
+        // Ancestors + descendants + the framework itself. A node is never its own
+        // ancestor in a tree, so this merge has no duplicate rows.
+        $results = array_merge($ancestors, $descendants, [$framework]);
+
+        array_walk_recursive($results, function($value, $key) use($status, $db, &$result_ids){
+            if($key == "value"){
+
                 // Query the database
-                $stmt = $db->prepare("UPDATE `frameworks` SET `parent`=0 WHERE `value` = :framework_id");
-                $stmt->bindParam(":framework_id", $results[0]['value'], PDO::PARAM_INT);
+                $stmt = $db->prepare("UPDATE `frameworks` SET `status` = :status WHERE `value` = :framework_id");
+                $stmt->bindParam(":framework_id", $value, PDO::PARAM_INT);
+                $stmt->bindParam(":status", $status, PDO::PARAM_INT);
+
+                // Update status
                 $stmt->execute();
+
+                $result_ids[] = $value;
             }
-        }else{
-            // Query the database
-            $stmt = $db->prepare("UPDATE `frameworks` SET `parent`=0, `status` = :status WHERE `value` = :framework_id");
-            $stmt->bindParam(":framework_id", $framework_id, PDO::PARAM_INT);
-            $stmt->bindParam(":status", $status, PDO::PARAM_INT);
-            $stmt->execute();
-
-            $result_ids[] = $framework_id;
-        }
-
+        });
     }
 
     // Close the database connection
@@ -363,14 +365,17 @@ function get_framework_controls_count($deleted = false) {
  ********************************/
 function get_framework_tabs($status) {
     global $lang, $escaper;
-    
+
     echo "
-        <table class='framework-table-{$status}'>
+        <table class='framework-table-{$status}' data-sr-tree width='100%'>
             <thead>
-                <th data-options=\"field:'name'\" width='20%'>{$escaper->escapeHtml($lang['FrameworkName'])}</th>
-                <th data-options=\"field:'description'\" width='70%'>{$escaper->escapeHtml($lang['FrameworkDescription'])}</th>
-                <th data-options=\"field:'actions'\" width='10%'>{$escaper->escapeHtml($lang['Actions'])}</th>
+                <tr>
+                    <th width='20%'>{$escaper->escapeHtml($lang['FrameworkName'])}</th>
+                    <th width='70%'>{$escaper->escapeHtml($lang['FrameworkDescription'])}</th>
+                    <th width='10%' class='text-center'>{$escaper->escapeHtml($lang['Actions'])}</th>
+                </tr>
             </thead>
+            <tbody></tbody>
         </table>
     ";
 } 
@@ -3393,48 +3398,76 @@ function delete_document($document_id, $version=null)
  *****************************************/
 function get_document_hierarchy_tabs($type="")
 {
-    global $lang;
-    global $escaper;
-    
+    global $lang, $escaper;
+
+    // [field, width, label]
+    $columns = [
+        ['document_name',  '25%', $lang['DocumentName']],
+        ['document_type',  '10%', $lang['DocumentType']],
+        ['framework_names','20%', $lang['ControlFrameworks']],
+        ['control_names',  '20%', $lang['Controls']],
+        ['submitted_by',   '10%', $lang['Submitter']],
+        ['updated_by',     '10%', $lang['UpdatedBy']],
+        ['creation_date',   '9%', $lang['CreationDate']],
+        ['approval_date',   '9%', $lang['ApprovalDate']],
+        ['status',          '7%', $lang['Status']],
+    ];
+
+    $head = '';
+    $filter = '';
+    foreach ($columns as $c) {
+        $head   .= "<th width='{$c[1]}'>{$escaper->escapeHtml($c[2])}</th>";
+        $filter .= "<th><input type='text' class='form-control form-control-sm' data-sr-filter='{$c[0]}' /></th>";
+    }
+
     echo "
-        <table class='document-table' id='document-hierarchy-table'>
-            <thead >
-                <th data-options=\"field:'document_name'\" width='25%'>{$escaper->escapeHtml($lang['DocumentName'])}</th>
-                <th data-options=\"field:'document_type'\" width='10%'>{$escaper->escapeHtml($lang['DocumentType'])}</th>
-                <th data-options=\"field:'framework_names'\" width='20%'>{$escaper->escapeHtml($lang['ControlFrameworks'])}</th>
-                <th data-options=\"field:'control_names'\" width='20%'>{$escaper->escapeHtml($lang['Controls'])}</th>
-                <th data-options=\"field:'submitted_by'\" width='10%'>{$escaper->escapeHtml($lang['Submitter'])}</th>
-                <th data-options=\"field:'updated_by'\" width='10%'>{$escaper->escapeHtml($lang['UpdatedBy'])}</th>
-                <th data-options=\"field:'creation_date'\" width='9%'>{$escaper->escapeHtml($lang['CreationDate'])}</th>
-                <th data-options=\"field:'approval_date'\" width='9%'>{$escaper->escapeHtml($lang['ApprovalDate'])}</th>
-                <th data-options=\"field:'status'\" width='7%'>{$escaper->escapeHtml($lang['Status'])}</th>
+        <table class='document-table' id='document-hierarchy-table' data-sr-tree width='100%'>
+            <thead>
+                <tr>{$head}</tr>
+                <tr>{$filter}</tr>
             </thead>
+            <tbody></tbody>
         </table>
     ";
-} 
+}
 
 /***************************************
  * FUNCTION: GET DOCUMENT TABULAR TABS *
  ***************************************/
 function get_document_tabular_tabs($type, $document_id=0)
 {
-    global $lang;
-    global $escaper;
-    
+    global $lang, $escaper;
+
+    // [field, width, label]
+    $columns = [
+        ['document_name',  '23%', $lang['DocumentName']],
+        ['document_type',  '10%', $lang['DocumentType']],
+        ['framework_names','18%', $lang['ControlFrameworks']],
+        ['control_names',  '18%', $lang['Controls']],
+        ['submitted_by',    '8%', $lang['Submitter']],
+        ['updated_by',      '8%', $lang['UpdatedBy']],
+        ['creation_date',   '9%', $lang['CreationDate']],
+        ['approval_date',   '9%', $lang['ApprovalDate']],
+        ['status',          '6%', $lang['Status']],
+        ['actions',         '7%', $lang['Actions']],
+    ];
+
+    $head = '';
+    $filter = '';
+    foreach ($columns as $c) {
+        $is_actions = ($c[0] === 'actions');
+        $cls = $is_actions ? " class='text-center'" : '';
+        $head .= "<th width='{$c[1]}'{$cls}>{$escaper->escapeHtml($c[2])}</th>";
+        $filter .= $is_actions ? "<th></th>" : "<th><input type='text' class='form-control form-control-sm' data-sr-filter='{$c[0]}' /></th>";
+    }
+
     echo "
-        <table class='document-table' id='{$type}-table'>
+        <table class='document-table' id='{$type}-table' data-sr-tree width='100%'>
             <thead>
-                <th data-options=\"field:'document_name'\" width='23%'>{$escaper->escapeHtml($lang['DocumentName'])}</th>
-                <th data-options=\"field:'document_type'\" width='10%'>{$escaper->escapeHtml($lang['DocumentType'])}</th>
-                <th data-options=\"field:'framework_names'\" width='18%'>{$escaper->escapeHtml($lang['ControlFrameworks'])}</th>
-                <th data-options=\"field:'control_names'\" width='18%'>{$escaper->escapeHtml($lang['Controls'])}</th>
-                <th data-options=\"field:'submitted_by'\" width='8%'>{$escaper->escapeHtml($lang['Submitter'])}</th>
-                <th data-options=\"field:'updated_by'\" width='8%'>{$escaper->escapeHtml($lang['UpdatedBy'])}</th>
-                <th data-options=\"field:'creation_date'\" width='9%'>{$escaper->escapeHtml($lang['CreationDate'])}</th>
-                <th data-options=\"field:'approval_date'\" width='9%'>{$escaper->escapeHtml($lang['ApprovalDate'])}</th>
-                <th data-options=\"field:'status'\" width='6%'>{$escaper->escapeHtml($lang['Status'])}</th>
-                <th data-options=\"field:'actions'\" width='7%'>{$escaper->escapeHtml($lang['Actions'])}</th>
+                <tr>{$head}</tr>
+                <tr>{$filter}</tr>
             </thead>
+            <tbody></tbody>
         </table>
     ";
 }
@@ -3460,7 +3493,7 @@ function get_documents_as_treegrid($type){
 
     $controls_by_id = [];
     if (!empty($all_control_ids)) {
-        foreach (get_framework_controls(array_values($all_control_ids)) as $control) {
+        foreach (get_framework_controls(implode(',', array_values($all_control_ids))) as $control) {
             $controls_by_id[(int)$control['id']] = $control;
         }
     }
@@ -3890,7 +3923,8 @@ function get_exceptions_as_treegrid($type){
                             }
                             break;
                         case "status":
-                            if (!empty($value) && ($row['status'] != $value)) {
+                        case "status_value":
+                            if (!empty($value) && ((string)$row['status'] !== (string)$value)) {
                                 continue 3;
                             }
                             break;
@@ -4068,17 +4102,40 @@ function get_exception_tabs($type)
 {
     global $lang, $escaper;
 
+    // [field, width, label, filter-kind]  filter-kind: 'text' | 'select' | '' (none)
+    $columns = [
+        ['name',             '24%', $lang[ucfirst($type) . "ExceptionName"], 'text'],
+        ['exception_id',      '7%', $lang['ID'],                             'text'],
+        ['status',            '7%', $lang['Status'],                         'select'],
+        ['description',      '23%', $lang['Description'],                    'text'],
+        ['justification',    '23%', $lang['Justification'],                  'text'],
+        ['next_review_date',  '9%', $lang['NextReviewDate'],                 'text'],
+        ['actions',           '7%', $lang['Actions'],                        ''],
+    ];
+
+    $head = '';
+    $filter = '';
+    foreach ($columns as $c) {
+        $cls = ($c[0] === 'actions') ? " class='text-center'" : '';
+        $head .= "<th width='{$c[1]}'{$cls}>{$escaper->escapeHtml($c[2])}</th>";
+        if ($c[3] === 'select') {
+            // build_url() prefixes the configured base URL so the dropdown also
+            // populates on subdirectory installs (the adapter requests this URL as-is).
+            $filter .= "<th><select class='form-select form-select-sm' data-sr-filter='status_value' data-sr-op='equal' data-sr-filter-url='" . $escaper->escapeHtml(build_url('api/v2/exceptions/status')) . "' data-sr-filter-default='" . $escaper->escapeHtml($lang['All']) . "'></select></th>";
+        } elseif ($c[3] === 'text') {
+            $filter .= "<th><input type='text' class='form-control form-control-sm' data-sr-filter='{$c[0]}' /></th>";
+        } else {
+            $filter .= "<th></th>";
+        }
+    }
+
     echo "
-        <table id='exception-table-{$type}' class='easyui-treegrid exception-table'>
+        <table id='exception-table-{$type}' class='exception-table' data-sr-tree width='100%'>
             <thead>
-                <th data-options=\"field:'name'\" width='24%'>{$escaper->escapeHtml($lang[ucfirst ($type) . "ExceptionName"])}</th>
-                <th data-options=\"field:'exception_id'\" width='7%'>{$escaper->escapeHtml($lang['ID'])}</th>
-                <th data-options=\"field:'status'\" width='7%'>{$escaper->escapeHtml($lang['Status'])}</th>
-                <th data-options=\"field:'description'\" width='23%'>{$escaper->escapeHtml($lang['Description'])}</th>
-                <th data-options=\"field:'justification'\" width='23%'>{$escaper->escapeHtml($lang['Justification'])}</th>
-                <th data-options=\"field:'next_review_date', align: 'center'\" width='9%'>{$escaper->escapeHtml($lang['NextReviewDate'])}</th>
-                <th data-options=\"field:'actions'\" width='7%'>{$escaper->escapeHtml($lang['Actions'])}</th>
+                <tr>{$head}</tr>
+                <tr>{$filter}</tr>
             </thead>
+            <tbody></tbody>
         </table>
     ";
 }
@@ -4090,15 +4147,26 @@ function get_associated_exception_tabs($type) {
 
     global $lang, $escaper;
 
+    // [field, width, label]  read-only associated-exceptions view (no filters)
+    $columns = [
+        ['name',             '25%', $lang[ucfirst($type) . "ExceptionName"]],
+        ['status',            '8%', $lang['Status']],
+        ['description',      '25%', $lang['Description']],
+        ['justification',    '24%', $lang['Justification']],
+        ['next_review_date', '18%', $lang['NextReviewDate']],
+    ];
+
+    $head = '';
+    foreach ($columns as $c) {
+        $head .= "<th width='{$c[1]}'>{$escaper->escapeHtml($c[2])}</th>";
+    }
+
     echo "
-        <table id='associated-exception-table-{$type}' class='easyui-treegrid exception-table'>
+        <table id='associated-exception-table-{$type}' class='exception-table' data-sr-tree width='100%'>
             <thead>
-                <th data-options=\"field:'name'\" width='25%'>{$escaper->escapeHtml($lang[ucfirst ($type) . "ExceptionName"])}</th>
-                <th data-options=\"field:'status'\" width='8%'>{$escaper->escapeHtml($lang['Status'])}</th>
-                <th data-options=\"field:'description'\" width='25%'>{$escaper->escapeHtml($lang['Description'])}</th>
-                <th data-options=\"field:'justification'\" width='24%'>{$escaper->escapeHtml($lang['Justification'])}</th>
-                <th data-options=\"field:'next_review_date', align: 'center'\" width='18%'>{$escaper->escapeHtml($lang['NextReviewDate'])}</th>
+                <tr>{$head}</tr>
             </thead>
+            <tbody></tbody>
         </table>
     ";
 

@@ -328,6 +328,12 @@ foreach ($required_scripts_or_css as $required_script_or_css) {
 	<link rel="stylesheet" href="../vendor/node_modules/datatables.net-rowreorder-bs5/css/rowReorder.bootstrap5.min.css?<?= $current_app_version ?>">
 <?php
             break;
+        case 'datatables:tree':
+?>
+	<!-- SimpleRisk tree adapter for DataTables (replaces EasyUI treegrid). Loaded after dataTables.renderers.js from the 'datatables' case. -->
+	<script src="../js/simplerisk/dataTables.tree.js?<?= $current_app_version ?>" id="script_datatables_tree" defer></script>
+<?php
+            break;
         case 'WYSIWYG':
 ?>
     <script src="../vendor/node_modules/hugerte/hugerte.min.js?<?= $current_app_version ?>" id="script_wysiwyg" defer></script>
@@ -489,96 +495,6 @@ foreach ($required_scripts_or_css as $required_script_or_css) {
         case 'cve_lookup':
 ?>
 	<script src="../js/simplerisk/cve_lookup.js?<?= $current_app_version ?>" defer></script>
-<?php 
-            break;
-        case 'easyui':
-?>
-    <script src="../vendor/simplerisk/jeasyui/jquery.easyui.min.js?<?= $current_app_version ?>" id="script_easyui" defer></script>
-    <link rel="stylesheet" href="../vendor/simplerisk/jeasyui/themes/default/easyui.css?<?= $current_app_version ?>">
-<?php 
-            break;
-        case 'easyui:treegrid':
-    ?>
-    <script src="../vendor/simplerisk/jeasyui/jquery.easyui.min.js?<?= $current_app_version ?>" id="script_easyui" defer></script>
-    <link rel="stylesheet" href="../vendor/simplerisk/jeasyui/themes/default/datagrid.css?<?= $current_app_version ?>">
-    <link rel="stylesheet" href="../vendor/simplerisk/jeasyui/themes/default/tree.css?<?= $current_app_version ?>">
-<?php 
-            break;
-        case 'easyui:dnd':
-?>
-	<script src="../vendor/simplerisk/jeasyui/plugins/treegrid-dnd.js?<?= $current_app_version ?>" defer></script>
-    <script src="../vendor/simplerisk/jeasyui/plugins/jquery.draggable.js?<?= $current_app_version ?>" defer></script>
-	<script src="../vendor/simplerisk/jeasyui/plugins/jquery.droppable.js?<?= $current_app_version ?>" defer></script>
-
-	<!-- Adding this empty style tag here to prevent easyui to create the rules for the treegrid drag&drop -->
-	<style id="treegrid-dnd-style"></style>
-<?php 
-            break;
-        case 'easyui:filter':
-?>
-	<script src="../vendor/simplerisk/jeasyui/plugins/datagrid-filter.js?<?= $current_app_version ?>"  id="script_easyui_filter" defer></script>
-    <script>
-        $(function () {
-            $.fn.datagrid.defaults.filters.select = {
-                init: function(container, options){
-
-                    // Remove old select if exists
-                    container.empty();
-
-                    var select = $('<select class="form-select" style="width:100%;" name="' + options.name + '"></select>').appendTo(container)
-                        .on('change', function () {
-                            if (typeof options.onChange === 'function') {
-                                options.onChange($(this).val());
-                            }
-                        });
-
-                    if (options.url) {
-                        $.ajax({
-                            url: options.url,
-                            method: 'GET',
-                            dataType: 'json',
-                            success: function(data) {
-                                let items = data.data;
-                                select.empty();
-                        
-                                if (options.defaultOption) {
-                                    $('<option>', {
-                                        value: options.defaultOption.value,
-                                        text: options.defaultOption.name
-                                    }).appendTo(select);
-                                }
-                        
-                                $.each(items, function(_, item){
-                                    $('<option>', {
-                                        value: item.value,
-                                        text: item.name
-                                    }).appendTo(select);
-                                });
-                            }
-                        });
-                    } else if (options.data) {
-                        $.each(options.data, function(_, item){
-                            $('<option>', {
-                                value: item.value,
-                                text: item.name
-                            }).appendTo(select);
-                        });
-                    }
-
-                    return select;
-                },
-                getValue: function(target){
-                    return $(target).val();
-                },
-                setValue: function(target, value){
-                    $(target).val(value);
-                },
-                resize: function(target, width){
-                    $(target).width(width);
-                }
-            };
-        });
-    </script>
 <?php 
             break;
         case 'datetimerangepicker':
@@ -770,15 +686,6 @@ foreach ($required_scripts_or_css as $required_script_or_css) {
             
         	$(document).on('shown.bs.tab', 'nav a[data-bs-toggle="tab"]', function (e) {
         		$('.content-wrapper')[0].scrollIntoView();
-<?php
-            if (in_array('easyui:treegrid', $required_scripts_or_css)) {
-?>
-            		if ($.fn.treegrid) {
-            			$('table.easyui-treegrid', $($(this).data('bs-target'))).each(function() {$(this).treegrid("resize");});
-            		}
-<?php
-            }
-?>
 	   		});
 		});
 	</script>

@@ -67,16 +67,32 @@ enforce_permission("riskmanagement");
     <script>
 
         // Have to init the treegrid when the tab is first displayed, because it's rendered incorrectly when initialized in the background
-        $(document).on('shown.bs.tab', 'nav a[data-bs-toggle=\"tab\"][data-type]', function (e) {
+        $(document).on('shown.bs.tab', '#associated-exceptions-accordion-body nav a[data-bs-toggle=\"tab\"][data-type]', function (e) {
             let type = $(this).data('type');
             $(`#associated-exception-table-${type}`).initAsAssociatedExceptionTreegrid(type);
         });
 
-        function wireActionButtons(tab) {
+        $(document).ready(function() {
+            wireActionButtons();
+
+            // The accordion starts collapsed; init the active tab once it opens.
+            $('#associated-exceptions-accordion-body').on('shown.bs.collapse', function() {
+                $('#associated-exceptions-accordion-body a[data-bs-toggle="tab"].active[data-type]').trigger('shown.bs.tab');
+            });
+        });
+
+        var _associatedExceptionActionButtonsWired = false;
+        function wireActionButtons() {
+            if (_associatedExceptionActionButtonsWired) {
+                return;
+            }
+            _associatedExceptionActionButtonsWired = true;
+
+            var $root = $('#associated-exceptions-accordion-body');
 
             //Info + Approve
-            $("#"+ tab + "-exceptions span.exception-name > a").click(function(){
-                event.preventDefault();
+            $root.on('click', 'span.exception-name > a, a.exception--approve', function(e){
+                e.preventDefault();
                 var exception_id = $(this).data("id");
                 var type = $(this).data("type");
                 var approval = $(this).hasClass("exception--approve");

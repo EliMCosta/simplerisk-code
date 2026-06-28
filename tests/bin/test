@@ -26,9 +26,9 @@ if [ "$SUITE" != "all" ]; then
         *) echo "Unknown suite '$SUITE'. Use: unit | integration | e2e | all [--coverage]" >&2; exit 2 ;;
     esac
 fi
-# RegenEasyUiFixturesTest rewrites the committed golden fixtures on every run,
+# RegenTreeFixturesTest rewrites the committed golden fixtures on every run,
 # so it is opt-in (@group regen) and excluded from the normal suites. Refresh
-# the goldens explicitly with bin/regen-easyui-fixtures after a deliberate change.
+# the goldens explicitly with bin/regen-tree-fixtures after a deliberate change.
 CMD+=(--exclude-group regen)
 if [ "$COVERAGE" = "1" ]; then
     CMD+=(--coverage-html tools/coverage --coverage-text)

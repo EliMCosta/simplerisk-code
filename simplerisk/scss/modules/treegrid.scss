@@ -27,7 +27,35 @@ span.tree-dnd-icon {
 
 
 
+.sr-tree-cell {
+	gap: 0.25rem;
+
+	.sr-tree-leaf {
+		display: inline-block;
+		width: 0.625rem;
+		flex-shrink: 0;
+	}
+
+	.sr-tree-toggle,
+	.sr-tree-grip {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		flex-shrink: 0;
+	}
+}
+
+tr.sr-tree-row.sr-tree-drop-target > td {
+	background-color: rgba(var(--bs-primary-rgb), 0.12);
+	outline: 2px dashed var(--bs-primary);
+	outline-offset: -2px;
+}
+
 .custom-treegrid-container {
+
+	.framework-block--delete {
+		margin-left: 5px;
+	}
 
 	.panel-header, .panel-body, .panel-body-noheader {
 	   	border: unset;

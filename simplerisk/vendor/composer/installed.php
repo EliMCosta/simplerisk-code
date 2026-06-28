@@ -530,15 +530,6 @@
             'aliases' => array(),
             'dev_requirement' => false,
         ),
-        'simplerisk/jeasyui' => array(
-            'pretty_version' => '1.10.19',
-            'version' => '1.10.19.0',
-            'reference' => 'ff885fee70a71562d9653a4ffe5721e8ec17ae69',
-            'type' => 'library',
-            'install_path' => __DIR__ . '/../simplerisk/jeasyui',
-            'aliases' => array(),
-            'dev_requirement' => false,
-        ),
         'simplesamlphp/assert' => array(
             'pretty_version' => 'v1.8.4',
             'version' => '1.8.4.0',

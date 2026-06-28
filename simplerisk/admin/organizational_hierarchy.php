@@ -5,7 +5,7 @@
 
 	// Render the header and sidebar
 	require_once(realpath(__DIR__ . '/../includes/renderutils.php'));
-	render_header_and_sidebar(['easyui:treegrid', 'easyui:dnd', 'CUSTOM:selectlist.js', 'CUSTOM:common.js'], ['check_admin' => true]);
+	render_header_and_sidebar(['datatables', 'datatables:tree', 'CUSTOM:selectlist.js', 'CUSTOM:common.js'], ['check_admin' => true]);
 
 	// If the extra directory exists
 	if (is_dir(realpath(__DIR__ . '/../extras/organizational_hierarchy'))) {
@@ -105,14 +105,15 @@
 		<div class='text-end'>
 			<button id='create_business_unit' type='button' class='btn btn-submit mb-2'><?= $escaper->escapeHtml($lang['CreateNewBusinessUnit']); ?></button>
 		</div>
-		<table id='business_units' class='easyui-treegrid framework-table'>
+		<table id='business_units' class='framework-table' data-sr-tree width='100%'>
 			<thead>
 				<tr>
-					<th data-options="field:'name'" width='20%'><?= $escaper->escapeHtml($lang['Name']); ?></th>
-					<th data-options="field:'description'" width='70%'><?= $escaper->escapeHtml($lang['Description']); ?></th>
-					<th data-options="field:'actions'" width='10%'><?= $escaper->escapeHtml($lang['Actions']); ?></th>
+					<th width='20%'><?= $escaper->escapeHtml($lang['Name']); ?></th>
+					<th width='70%'><?= $escaper->escapeHtml($lang['Description']); ?></th>
+					<th width='10%' class='text-center'><?= $escaper->escapeHtml($lang['Actions']); ?></th>
 				</tr>
 			</thead>
+			<tbody></tbody>
 		</table>
 	</div>
 	<?php
@@ -308,41 +309,23 @@
 			$(this).find('.modal-body').scrollTop(0);
 		});
 
-		$('#business_units').treegrid({
-			iconCls: 'icon-ok',
-			animate: false,
-			collapsible: true,
-			fitColumns: true,
-			url: BASE_URL + '/api/v2/organizational_hierarchy/business_unit/tree',
-			method: 'get',
+		$('#business_units').simpleriskTree({
 			idField: 'value',
 			treeField: 'name',
-			scrollbarSize: 0,
-			loadFilter: function(data, parentId) {
-				return data.data;
+			expandAll: false, // collapsed on load (matches the old onLoadSuccess collapseAll)
+			ajax: {
+				url: BASE_URL + '/api/v2/organizational_hierarchy/business_unit/tree'
 			},
-			onLoadSuccess: function(row, data){
-				//fixTreeGridCollapsableColumn();
-				//It's there to be able to have it collapsed on load
-				var tree = $('#business_units');
-				tree.treegrid('options').animate = false;
-				tree.treegrid('collapseAll');
-				//tree.treegrid('options').animate = true;
-
-				//$('#business_units').treegrid('resize');
-			},
-			onLoadError: function(xhr, status, error) {
-				if(!retryCSRF(xhr, this)) {
-					if(xhr.responseJSON && xhr.responseJSON.status_message) {
-						showAlertsFromArray(xhr.responseJSON.status_message);
-					}
-				}
-			}
+			columns: [
+				{ data: 'name', width: '20%' },
+				{ data: 'description', width: '70%' },
+				{ data: 'actions', orderable: false, searchable: false, className: 'text-center', width: '10%' }
+			]
 		});
 
 		// Enable expanding/collapsing by clicking on the business unit's name
 		$(document).on('click', '.business-unit-name', function() {
-			$('#business_units').treegrid('toggle', $(this).data('id'));
+			var t = $('#business_units'); if ($.fn.dataTable.isDataTable(t)) { t.DataTable().srToggle($(this).data('id')); }
 		});
 
 		$('#create_business_unit').click(function(event) {
@@ -395,8 +378,7 @@
 					resetForm('#business-unit-new-form', false);
 
 					var tree = $('#business_units');
-					tree.treegrid('options').animate = false;
-					tree.treegrid('reload');
+					if ($.fn.dataTable.isDataTable(tree)) { tree.DataTable().ajax.reload(); }
 
 					refresh_business_unit_menu_items();
 				},
@@ -494,8 +476,7 @@
 					resetForm('#business-unit-update-form', false);
 
 					var tree = $('#business_units');
-					tree.treegrid('options').animate = false;
-					tree.treegrid('reload');
+					if ($.fn.dataTable.isDataTable(tree)) { tree.DataTable().ajax.reload(); }
 
 					refresh_business_unit_menu_items();
 				},
@@ -563,8 +544,7 @@
 					loading = false;
 
 					var tree = $('#business_units');
-					tree.treegrid('options').animate = false;
-					tree.treegrid('reload');
+					if ($.fn.dataTable.isDataTable(tree)) { tree.DataTable().ajax.reload(); }
 
 					refresh_business_unit_menu_items();
 				},
@@ -633,12 +613,7 @@
 
 					//$('tr[node-id=\"' + business_unit_id + '-' + team_id + '\"]').remove();
 					var tree = $('#business_units');
-					tree.treegrid('remove', business_unit_id + '-' + team_id);
-					
-					var teamCountWrapper = $('tr[node-id=' + business_unit_id +'] span.team-count');
-					var teamCount = parseInt(teamCountWrapper.data('team-count'));
-					teamCountWrapper.data('team-count', teamCount-1);
-					teamCountWrapper.html('(' + (teamCount-1) + ')');
+					if ($.fn.dataTable.isDataTable(tree)) { tree.DataTable().ajax.reload(null, false); }
 				},
 				error: function(xhr, status, error){
 					if(!retryCSRF(xhr, this)) {

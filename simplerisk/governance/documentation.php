@@ -5,7 +5,7 @@
 
     // Render the header and sidebar
     require_once(realpath(__DIR__ . '/../includes/renderutils.php'));
-    render_header_and_sidebar(['datetimerangepicker', 'easyui:treegrid', 'easyui:filter', 'multiselect', 'tabs:logic', 'blockUI', 'CUSTOM:common.js', 'CUSTOM:pages/governance.js', 'datatables'], ['check_governance' => true]);
+    render_header_and_sidebar(['datetimerangepicker', 'datatables', 'datatables:tree', 'multiselect', 'tabs:logic', 'blockUI', 'CUSTOM:common.js', 'CUSTOM:pages/governance.js'], ['check_governance' => true]);
 
     // Include required functions file
     require_once(realpath(__DIR__ . '/../includes/permissions.php'));
@@ -401,9 +401,16 @@
     }
 
 	// Have to init the treegrid when the tab is first displayed, because it's rendered incorrectly when initialized in the background
-    $(document).on('shown.bs.tab', 'nav a[data-bs-toggle=\"tab\"][data-type]', function(e) {
+    $(document).on('shown.bs.tab', '#documents-tab-content nav a[data-bs-toggle="tab"][data-type]', function(e) {
         let type = $(this).data('type');
         $(`#${type}-table`).initAsDocumentProgramTreegrid(type);
+    });
+
+    $(function() {
+        // Trigger init for the first visible tab (shown.bs.tab is not fired on page load).
+        setTimeout(function() {
+            $('#documents-tab-content a[data-bs-toggle="tab"].active[data-type]').trigger('shown.bs.tab');
+        }, 0);
     });
 
     $(document).ready(function() {
@@ -600,16 +607,10 @@
                         $.unblockUI();
 
                         var tree = $('#document-hierachy-content #document-hierarchy-table');
-                        if (tree.data('treegrid')) {
-                            tree.treegrid('options').animate = false;
-                            tree.treegrid('reload');
-                        }
+                        if ($.fn.dataTable.isDataTable(tree)) { tree.reloadSrTree(); }
 
                         var tree = $('#' + data.data.type + '-table');
-                        if (tree.data('treegrid')) {
-                            tree.treegrid('options').animate = false;
-                            tree.treegrid('reload');
-                        }
+                        if ($.fn.dataTable.isDataTable(tree)) { tree.reloadSrTree(); }
                     },
                     error: function(xhr,status,error){
                         if(!retryCSRF(xhr, this))
@@ -666,16 +667,10 @@
                         $.unblockUI();
 
                         var tree = $('#document-hierachy-content #document-hierarchy-table');
-                        if (tree.data('treegrid')) {
-                            tree.treegrid('options').animate = false;
-                            tree.treegrid('reload');
-                        }
+                        if ($.fn.dataTable.isDataTable(tree)) { tree.reloadSrTree(); }
 
                         var tree = $('#' + data.data.type + '-table');
-                        if (tree.data('treegrid')) {
-                            tree.treegrid('options').animate = false;
-                            tree.treegrid('reload');
-                        }
+                        if ($.fn.dataTable.isDataTable(tree)) { tree.reloadSrTree(); }
                     },
                     error: function(xhr,status,error){
                         if(!retryCSRF(xhr, this))
@@ -723,16 +718,10 @@
                         loading = false;
 
                         var tree = $('#document-hierachy-content #document-hierarchy-table');
-                        if (tree.data('treegrid')) {
-                            tree.treegrid('options').animate = false;
-                            tree.treegrid('reload');
-                        }
+                        if ($.fn.dataTable.isDataTable(tree)) { tree.reloadSrTree(); }
 
                         var tree = $('#' + data.data.type + '-table');
-                        if (tree.data('treegrid')) {
-                            tree.treegrid('options').animate = false;
-                            tree.treegrid('reload');
-                        }
+                        if ($.fn.dataTable.isDataTable(tree)) { tree.reloadSrTree(); }
                     },
                     error: function(xhr,status,error){
                         if(!retryCSRF(xhr, this))

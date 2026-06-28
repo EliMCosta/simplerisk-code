@@ -74,8 +74,9 @@ form#comment{
   @extend .animation;
 
   &.rotate{
-    -ms-transform: rotate(45deg); /* IE 9 */
     -webkit-transform: rotate(45deg); /* Chrome, Safari, Opera */
+    -moz-transform: rotate(45deg);
+    -ms-transform: rotate(45deg); /* IE 9 */
     transform: rotate(45deg);
   }
 

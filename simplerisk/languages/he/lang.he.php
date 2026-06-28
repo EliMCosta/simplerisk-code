@@ -2945,6 +2945,10 @@ $lang = array(
     'PurchaseExtraBody'                   => 'התוסף {name} אינו כלול ברישיון SimpleRisk הנוכחי שלך. בקר בדף התוספות של SimpleRisk כדי ללמוד עוד או לרכוש רישיון.',
     'ViewExtras'                          => 'הצג תוספות',
 
+    'MoveToActive'=>'העבר לפעיל',
+    'MoveToInactive'=>'העבר ללא פעיל',
+    'CantMoveIntoOwnChild'=>'Cannot move a node into its own descendant.',
+
     '' => '',
 );
 ?>

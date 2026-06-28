@@ -177,13 +177,17 @@ final class ApiAuthTest extends TestCase
         self::assertTrue(api_session_blocks_rest_auth());
     }
 
-    /** Seed get_setting()'s $GLOBALS cache so the toggle reads without touching the DB. */
+    /**
+     * Seed get_setting()'s $GLOBALS cache so the toggle reads a known value
+     * WITHOUT touching the DB. get_setting() returns the cached entry verbatim
+     * whenever isset() is true — and isset() is true even for false, which is
+     * get_setting()'s own "absent" representation. So map the null (absent) case
+     * to false rather than unset()-ing: unsetting drops the cache layer and falls
+     * through to the live DB row, coupling a unit test to whether an admin has
+     * enabled the feature at runtime.
+     */
     private function setCached(string $name, ?string $value): void
     {
-        if ($value === null) {
-            unset($GLOBALS['setting_' . $name]);
-        } else {
-            $GLOBALS['setting_' . $name] = $value;
-        }
+        $GLOBALS['setting_' . $name] = ($value === null) ? false : $value;
     }
 }

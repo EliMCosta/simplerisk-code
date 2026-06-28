@@ -2945,6 +2945,10 @@ $lang = array(
     'PurchaseExtraBody'                   => '{name} 추가 기능은 현재 사용 중인 SimpleRisk 라이선스에 포함되어 있지 않습니다. 자세한 내용을 확인하거나 라이선스를 구매하려면 SimpleRisk 추가 기능 페이지를 방문하세요.',
     'ViewExtras'                          => '추가 정보 보기',
 
+    'MoveToActive'=>'활성으로 이동',
+    'MoveToInactive'=>'비활성으로 이동',
+    'CantMoveIntoOwnChild'=>'Cannot move a node into its own descendant.',
+
     '' => '',
 );
 ?>

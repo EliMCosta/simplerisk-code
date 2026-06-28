@@ -2945,6 +2945,10 @@ $lang = array(
     'PurchaseExtraBody'                   => '{name} 附加功能不包含在您目前 SimpleRisk 授權的功能中。請造訪 SimpleRisk 附加功能頁面以了解更多資訊或購買授權。',
     'ViewExtras'                          => '查看附加功能',
 
+    'MoveToActive'=>'移至啟用',
+    'MoveToInactive'=>'移至停用',
+    'CantMoveIntoOwnChild'=>'Cannot move a node into its own descendant.',
+
     '' => '',
 );
 ?>

@@ -2945,6 +2945,10 @@ $lang = array(
     'PurchaseExtraBody'                   => 'Gói {name} Extra không được bao gồm trong giấy phép SimpleRisk hiện tại của bạn. Hãy truy cập trang SimpleRisk Extras để tìm hiểu thêm hoặc mua giấy phép.',
     'ViewExtras'                          => 'Xem thêm',
 
+    'MoveToActive'=>'Chuyển sang Hoạt động',
+    'MoveToInactive'=>'Chuyển sang Không hoạt động',
+    'CantMoveIntoOwnChild'=>'Cannot move a node into its own descendant.',
+
     '' => '',
 );
 ?>

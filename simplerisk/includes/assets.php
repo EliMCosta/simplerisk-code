@@ -2814,34 +2814,7 @@ function get_asset_groups_table() {
 
     global $escaper;
 
-    // @phan-suppress-next-line SecurityCheck-XSS -- build_url() called with hardcoded path literal; base URL is admin-configured
-    echo "<table id='asset-groups-table' class='easyui-treegrid asset-groups-table'
-            data-options=\"
-                iconCls: 'icon-ok',
-                animate: false,
-                fitColumns: true,
-                nowrap: true,
-                pagination: true,
-                pageSize: 10,
-                pageList: [5,10,20,100],
-                url: '" . build_url("api/v2/asset-group/tree") . "',
-                method: 'GET',
-                idField: 'id',
-                treeField: 'name',
-                scrollbarSize: 0,
-                loadFilter: function(data, parentId) {
-                    return data.data;
-                },
-                onLoadSuccess: function(row, data){
-                    //fixTreeGridCollapsableColumn();
-                    //It's there to be able to have it collapsed on load
-                    /*var tree = $('#asset-groups-table');
-                    tree.treegrid('collapseAll');
-                    tree.treegrid('options').animate = true;*/
-                    if (data && data.total)
-                        $('#asset-groups-count').text(data.total);
-                }
-            \">";
+    echo "<table id='asset-groups-table' class='asset-groups-table' data-sr-tree width='100%'>";
     echo "<thead>";
     
         // If the customization extra is enabled, shows fields by asset customization
@@ -2867,6 +2840,7 @@ function get_asset_groups_table() {
     
     echo "</thead>\n";
 
+    echo "<tbody></tbody>";
     echo "</table>";
 }
 
@@ -2908,6 +2882,14 @@ function get_asset_groups_for_treegrid($offset, $rows) {
                 <a title='{$delete_tooltip}' class='asset-group--delete' data-id='{$group['id']}'><i class='fa fa-trash'></i></a>
             </div>";
     }
+
+    // Eager-load member assets as children for each group on the current page.
+    // The DataTables tree adapter needs a nested payload; pagination limits how
+    // many root groups (and therefore child sets) are loaded per request.
+    foreach($groups as &$group) {
+        $group['children'] = get_assets_of_asset_group_for_treegrid((int)$group['id']);
+    }
+    unset($group);
 
     $result["rows"] = $groups;
 
