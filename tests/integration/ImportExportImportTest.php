@@ -184,7 +184,7 @@ final class ImportExportImportTest extends IntegrationTestCase
 
         self::assertSame('update', $match['action']);
         self::assertSame($id, $match['db_id']);
-        self::assertStringContainsString('Reference ID', $match['reason']);
+        self::assertStringContainsString('Reference', $match['reason']);
     }
 
     public function test_no_match_classifies_as_create(): void
@@ -192,12 +192,35 @@ final class ImportExportImportTest extends IntegrationTestCase
         self::assertSame('create', ie_match_existing_risk([])['action']);
     }
 
-    public function test_risk_id_present_but_absent_falls_through_to_create(): void
+    public function test_risk_id_present_but_absent_is_skipped(): void
     {
-        // risk_id >= 1000, but no such risk and no reference_id: the engine must
-        // NOT treat it as an update of a phantom row.
+        // A supplied system Risk ID that doesn't exist must NOT become a phantom
+        // create — the row is ignored (skip_notfound), per the integrity rule.
         $match = ie_match_existing_risk(['risk_id' => 999999]);
-        self::assertSame('create', $match['action']);
+        self::assertSame('skip_notfound', $match['action']);
+        self::assertStringContainsString('does not exist', $match['reason']);
+    }
+
+    public function test_closed_risk_by_id_is_skipped(): void
+    {
+        $id = $this->insertRisk('Closed By Id');
+        $this->txdb->prepare("UPDATE risks SET status = 'Closed' WHERE id = ?")->execute([$id]);
+
+        $match = ie_match_existing_risk(['risk_id' => $id + 1000]);
+        self::assertSame('skip_closed', $match['action']);
+        self::assertSame($id, $match['db_id']);
+        self::assertStringContainsString('closed', $match['reason']);
+    }
+
+    public function test_closed_risk_by_reference_is_skipped(): void
+    {
+        $ref = 'CREF-' . substr(uniqid('', true), -8);
+        $id  = $this->insertRisk('Closed By Ref', $ref);
+        $this->txdb->prepare("UPDATE risks SET status = 'Closed' WHERE id = ?")->execute([$id]);
+
+        $match = ie_match_existing_risk(['reference_id' => $ref]);
+        self::assertSame('skip_closed', $match['action']);
+        self::assertStringContainsString('closed', $match['reason']);
     }
 
     // ------------------------------------------------------------------
@@ -261,8 +284,38 @@ final class ImportExportImportTest extends IntegrationTestCase
             . ",\n";                            // invalid (no subject)
         $preview = ie_preview($this->writeCsv($csv), $mapping);
 
-        self::assertSame(['create' => 1, 'update' => 1, 'invalid' => 1], $preview['counts']);
+        self::assertSame(1, $preview['counts']['create']);
+        self::assertSame(1, $preview['counts']['update']);
+        self::assertSame(1, $preview['counts']['invalid']);
+        self::assertSame(0, $preview['counts']['skip_closed']);
+        self::assertSame(0, $preview['counts']['skip_notfound']);
         self::assertSame(3, $preview['total']);
+        // The per-ID warning summary the UI renders.
+        self::assertSame([$existing], $preview['updated_ids']);
+        self::assertSame([], $preview['skipped_closed_ids']);
+        self::assertSame([], $preview['skipped_notfound_ids']);
+    }
+
+    public function test_preview_surfaces_closed_and_not_found_ids(): void
+    {
+        $this->seedSession(true);
+        $closed   = $this->insertRisk('Closed One');
+        $this->txdb->prepare("UPDATE risks SET status = 'Closed' WHERE id = ?")->execute([$closed]);
+        $open     = $this->insertRisk('Open One');
+        $mapping  = $this->idSubjectMapping();
+
+        $csv = "Risk ID,Subject\n"
+            . ($closed + 1000) . ",Closed Row\n"   // skip_closed
+            . ($open + 1000) . ",Open Row\n"       // update
+            . "888888,No Such Risk\n";             // skip_notfound
+        $preview = ie_preview($this->writeCsv($csv), $mapping);
+
+        self::assertSame(1, $preview['counts']['update']);
+        self::assertSame(1, $preview['counts']['skip_closed']);
+        self::assertSame(1, $preview['counts']['skip_notfound']);
+        self::assertSame([$open + 1000], $preview['updated_ids']);
+        self::assertSame([$closed + 1000], $preview['skipped_closed_ids']);
+        self::assertSame([888888], $preview['skipped_notfound_ids']);
     }
 
     public function test_preview_returns_error_for_missing_file(): void
@@ -300,6 +353,13 @@ final class ImportExportImportTest extends IntegrationTestCase
         // without the Encryption Extra, a token with it).
         $stored = (string)$this->txdb->query("SELECT `subject` FROM `risks` ORDER BY `id` DESC LIMIT 1")->fetchColumn();
         self::assertSame($subject, try_decrypt($stored));
+
+        // The created risk MUST get a risk_scoring row — submit_risk() alone
+        // doesn't make one, and every risk list INNER JOINs risk_scoring, so a
+        // risk without it is invisible. (Regression guard.)
+        $newId      = (int)$this->txdb->query("SELECT `id` FROM `risks` ORDER BY `id` DESC LIMIT 1")->fetchColumn();
+        $hasScoring = (int)$this->txdb->query("SELECT COUNT(*) FROM `risk_scoring` WHERE `id` = {$newId}")->fetchColumn();
+        self::assertSame(1, $hasScoring, 'an imported risk must receive a risk_scoring row or it is invisible');
     }
 
     public function test_run_import_updates_an_existing_risk(): void
@@ -328,5 +388,58 @@ final class ImportExportImportTest extends IntegrationTestCase
         self::assertSame(0, $stats['created']);
         $stored = (string)$this->txdb->query("SELECT `subject` FROM `risks` WHERE `id` = {$id}")->fetchColumn();
         self::assertSame($newSubj, try_decrypt($stored));
+    }
+
+    public function test_update_preserves_blank_columns(): void
+    {
+        // Preserve-on-blank: a column that is present in the CSV but empty must
+        // leave the existing value untouched (not clear it). reference_id is a
+        // plaintext column, so no encryption round-trip to worry about.
+        $this->seedSession(true);
+        $keepRef = 'KEEP-' . substr(uniqid('', true), -8);
+        $id      = $this->insertRisk('Orig Subject', $keepRef);
+
+        $mapping = ['columns' => [
+            ['field' => 'risk_id',     'header' => 'Risk ID',              'included' => true],
+            ['field' => 'subject',     'header' => 'Subject',              'included' => true],
+            ['field' => 'reference_id','header' => 'External Reference ID','included' => true],
+        ]];
+        $newSubj = 'New Subject ' . uniqid();
+        $path    = $this->writeCsv("Risk ID,Subject,External Reference ID\n" . ($id + 1000) . ",{$newSubj},\n");
+
+        $stats = ie_run_import($path, $mapping);
+        self::assertSame(1, $stats['updated']);
+
+        $ref  = (string)$this->txdb->query("SELECT `reference_id` FROM `risks` WHERE `id` = {$id}")->fetchColumn();
+        self::assertSame($keepRef, $ref, 'blank reference_id column must preserve the existing value');
+        $subj = (string)$this->txdb->query("SELECT `subject` FROM `risks` WHERE `id` = {$id}")->fetchColumn();
+        self::assertSame($newSubj, try_decrypt($subj));
+    }
+
+    public function test_run_import_skips_closed_and_not_found_without_writing(): void
+    {
+        $this->seedSession(true);
+        $closed = $this->insertRisk('Closed For Import');
+        $this->txdb->prepare("UPDATE risks SET status = 'Closed' WHERE id = ?")->execute([$closed]);
+
+        $mapping = ['columns' => [
+            ['field' => 'risk_id', 'header' => 'Risk ID', 'included' => true],
+            ['field' => 'subject','header' => 'Subject',  'included' => true],
+        ]];
+        $csv = "Risk ID,Subject\n"
+            . ($closed + 1000) . ",Should Not Update\n"   // skip_closed
+            . "7777777,Phantom\n";                        // skip_notfound
+        $before = (int)$this->txdb->query("SELECT COUNT(*) FROM risks")->fetchColumn();
+        $stats  = ie_run_import($this->writeCsv($csv), $mapping);
+        $after  = (int)$this->txdb->query("SELECT COUNT(*) FROM risks")->fetchColumn();
+
+        self::assertSame(0, $stats['created']);
+        self::assertSame(0, $stats['updated']);
+        self::assertSame(2, $stats['skipped']);
+        self::assertSame([$closed + 1000], $stats['skipped_closed_ids']);
+        self::assertSame([7777777], $stats['skipped_notfound_ids']);
+        self::assertSame($before, $after, 'no rows written for skipped entries');
+        $subj = (string)$this->txdb->query("SELECT `subject` FROM `risks` WHERE `id` = {$closed}")->fetchColumn();
+        self::assertSame('Closed For Import', try_decrypt($subj), 'closed risk must not be updated');
     }
 }

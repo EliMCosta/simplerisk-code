@@ -9,9 +9,9 @@
 #     only as a deliberate, tested change. The upstream default is 8.4.
 #   * ./simplerisk is the vendored CORE checkout only. The app source is COPY'd from
 #     it (instead of downloaded from the SimpleRisk S3 bundle at build time).
-#   * ./extras holds our custom extras separately from core. They are COPY'd in here
-#     so the image is self-contained, but in dev compose.app.yml bind-mounts ./extras
-#     over /var/www/simplerisk/extras for live editing — see entrypoint/compose.
+#   * Custom extras live in ../extras (outside this repo). compose.app.yml bind-mounts
+#     that path over /var/www/simplerisk/extras for live editing — see entrypoint/compose.
+#     The image only gets an empty placeholder dir here; runtime content comes from the mount.
 #   * /var/www/simplerisk is NOT a VOLUME. The upstream image persists it across image
 #     upgrades; we rebuild on every core edit, so a volume there would shadow freshly-
 #     COPY'd code. Runtime state that must survive rebuilds (extras config.php/data,
@@ -105,7 +105,7 @@ RUN echo "0 0 * * * root /usr/sbin/logrotate /etc/logrotate.d/simplerisk.conf > 
     chmod 0644 /etc/cron.d/logrotate-cron
 
 # Our PHP tuning: upload/memory limits (spreadsheet/attachment imports) + OPcache.
-# validate_timestamps=1 so bind-mounted extras (./extras) are picked up live without a
+# validate_timestamps=1 so bind-mounted extras (../extras) are picked up live without a
 # restart/rebuild; core is still COPY'd, so core edits still require a rebuild.
 COPY simplerisk-limits.ini  /usr/local/etc/php/conf.d/
 COPY simplerisk-opcache.ini /usr/local/etc/php/conf.d/
@@ -117,10 +117,8 @@ COPY common/ /
 # The app source — our customized core checkout, not an upstream download.
 COPY simplerisk/ /var/www/simplerisk/
 
-# Our custom extras live outside the core checkout (./extras) so simplerisk/ stays
-# core-only. Baked in here for a self-contained image; compose.app.yml bind-mounts
-# ./extras over this path in dev for live editing + persistent config.php/data.
-COPY extras/ /var/www/simplerisk/extras/
+# Placeholder for custom extras — compose.app.yml bind-mounts ../extras here at runtime.
+RUN mkdir -p /var/www/simplerisk/extras
 
 # Opt-in first-admin seeder (runs only when ADMIN_USERNAME is set) and the dev-only
 # LDAP connection seeder (invoked by the entrypoint after db_setup).

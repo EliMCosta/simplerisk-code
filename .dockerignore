@@ -5,12 +5,7 @@
 **/.vscode
 **/*.swp
 
-# Per-instance extra configs (secrets/CORS/LDAP settings) must never be baked in.
-extras/*/config.php
-
-# Keep runtime data dirs out of the image (the dev bind mount or the app populates them).
-extras/*/data/*
-!extras/*/data/.gitkeep
+# Extras live outside this repo (../extras) and are bind-mounted at runtime — not in context.
 
 # TLS material is bind-mounted at runtime (./certs) and holds private keys — never bake in.
 certs/

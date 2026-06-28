@@ -73,6 +73,14 @@ final class ImportExportHelpersTest extends TestCase
         self::assertSame('hello', $val);
     }
 
+    public function test_resolve_field_multi_text_splits_on_separators(): void
+    {
+        // multi_text (tags / affected assets / mitigation controls) splits a cell
+        // into trimmed names without any id lookup.
+        self::assertSame(['a', 'b', 'c'], ie_resolve_field('tags', ['kind' => 'multi_text'], 'a, b; c'));
+        self::assertSame([], ie_resolve_field('tags', ['kind' => 'multi_text'], '   '));
+    }
+
     public function test_build_create_args_defaults_and_session_submitted_by(): void
     {
         $_SESSION['uid'] = 7;
