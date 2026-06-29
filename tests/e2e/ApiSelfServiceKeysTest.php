@@ -84,10 +84,18 @@ final class ApiSelfServiceKeysTest extends E2ETestCase
     private function findKeyEntryByLabel(int $uid, string $label): ?array
     {
         $blob = $this->readSetting('api_keys');
-        if ($blob === null) {
+        if ($blob === null || $blob === '') {
             return null;
         }
-        $keys = json_decode($blob, true);
+        // The API Extra wraps the api_keys blob in try_encrypt() at rest once the
+        // Encryption Extra is active (extras/api/includes/auth.php:153; the canonical
+        // reader api_get_stored_keys decrypts at auth.php:137). Mirror it, with the
+        // same raw-JSON fallback for a blob that has not yet been re-encrypted.
+        $plain = function_exists('try_decrypt') ? try_decrypt($blob) : $blob;
+        $keys = json_decode($plain, true);
+        if (!is_array($keys)) {
+            $keys = json_decode($blob, true);
+        }
         if (!is_array($keys)) {
             return null;
         }

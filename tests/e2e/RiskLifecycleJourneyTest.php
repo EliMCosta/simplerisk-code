@@ -62,10 +62,9 @@ final class RiskLifecycleJourneyTest extends E2ETestCase
         [$code, , $body] = $this->actionPost('/api/v2/management/risk/saveComment?id=' . $publicId, ['comment' => $comment]);
         self::assertSame(200, $code, "saveComment returned {$code}: {$body}");
 
-        $count = $this->countScalar(
-            'SELECT COUNT(*) FROM comments WHERE risk_id = ? AND comment = ?',
-            [self::dbId($publicId), $comment]
-        );
+        // Comment text is encrypted at rest under the Encryption Extra, so match it
+        // by decrypting the stored column rather than a plaintext SQL equality.
+        $count = $this->countByDecryptedColumn('comments', 'comment', $comment, 'risk_id = ?', [self::dbId($publicId)]);
         self::assertSame(1, $count, 'the comment must be persisted on the risk');
     }
 

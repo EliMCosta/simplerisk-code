@@ -61,7 +61,9 @@ final class ImportExportExtraCsvTest extends E2ETestCase
             [$code2] = $this->authedPost('/admin/importexport.php', ['ie_action' => 'import']);
             self::assertSame(302, $code2, 'import should PRG-redirect');
 
-            $n = $this->countScalar("SELECT COUNT(*) FROM risks WHERE subject = ?", [$subject]);
+            // The imported subject is encrypted at rest under the Encryption Extra —
+            // match by decrypting the stored column instead of a plaintext SQL equality.
+            $n = $this->countByDecryptedColumn('risks', 'subject', $subject);
             self::assertSame(1, $n, "imported risk '{$subject}' was not created");
         } finally {
             @unlink($fixture);

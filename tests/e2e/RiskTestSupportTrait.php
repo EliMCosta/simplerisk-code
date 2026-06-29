@@ -342,6 +342,47 @@ trait RiskTestSupportTrait
         return $publicId - 1000;
     }
 
+    /**
+     * Decrypt a single stored value. The Encryption Extra stores free-text fields
+     * (risk subject/comment, framework name, …) as ENC1: ciphertext at rest;
+     * try_decrypt() recovers the plaintext and is an identity on plaintext, so this
+     * is safe whether encryption is on OR off. Returns '' for null so callers can
+     * compare cleanly. try_decrypt() is available because the suite runs inside the
+     * simplerisk-app container (bootstrapped via includes/functions.php).
+     */
+    private function decryptValue(?string $value): string
+    {
+        if ($value === null) {
+            return '';
+        }
+        return function_exists('try_decrypt') ? (string) try_decrypt($value) : (string) $value;
+    }
+
+    /**
+     * Fetch $column from $table and return every value DECRYPTED. SQL equality can't
+     * match ciphertext (AES-256-GCM uses a random nonce per encryption), so for any
+     * encrypted-at-rest free-text column callers must decrypt in PHP and compare.
+     * $whereSql/$params scope the candidate set (e.g. to one risk). Used for risk
+     * subject, framework name, comment text, …
+     */
+    protected function selectDecryptedColumn(string $table, string $column, string $whereSql = '', array $params = []): array
+    {
+        $db = db_open();
+        $sql = "SELECT `{$column}` FROM `{$table}`" . ($whereSql !== '' ? " WHERE {$whereSql}" : '');
+        $stmt = $db->prepare($sql);
+        $stmt->execute($params);
+        $values = $stmt->fetchAll(PDO::FETCH_COLUMN);
+        db_close($db);
+        return array_map(fn ($v) => $this->decryptValue($v), $values);
+    }
+
+    /** Count rows whose (encrypted-at-rest) $column decrypts to exactly $plaintext. */
+    protected function countByDecryptedColumn(string $table, string $column, string $plaintext, string $whereSql = '', array $params = []): int
+    {
+        $values = $this->selectDecryptedColumn($table, $column, $whereSql, $params);
+        return count(array_filter($values, fn ($v) => $v === $plaintext));
+    }
+
     /** id, subject, status, mitigation_id, mgmt_review for a risk by public id. */
     protected function readRiskRow(int $publicId): array
     {
@@ -350,16 +391,21 @@ trait RiskTestSupportTrait
             [self::dbId($publicId)]
         );
         self::assertIsArray($row, "risk db row missing for public id {$publicId}");
+        $row['subject'] = $this->decryptValue($row['subject'] ?? null);
         return $row;
     }
 
     /** Persisted edit-details columns (category, source, owner, manager, reference_id, notes). */
     protected function readRiskDetailsRow(int $publicId): array
     {
-        return $this->fetchRow(
+        $row = $this->fetchRow(
             'SELECT id, subject, category, source, owner, manager, reference_id FROM risks WHERE id = ?',
             [self::dbId($publicId)]
         );
+        if (is_array($row)) {
+            $row['subject'] = $this->decryptValue($row['subject'] ?? null);
+        }
+        return $row;
     }
 
     /** risk_scoring columns for a risk by public id. */
@@ -475,7 +521,19 @@ trait RiskTestSupportTrait
     protected function sweepE2ERisks(): void
     {
         $db = db_open();
-        $ids = $db->query("SELECT id FROM risks WHERE subject LIKE '" . self::SUBJECT_PREFIX . "%'")->fetchAll(PDO::FETCH_COLUMN);
+        // The subject may be encrypted at rest (ENC1:), so a plaintext LIKE misses
+        // escapees — decrypt each subject and match the prefix in PHP instead.
+        $rows = $db->query('SELECT id, subject FROM risks')->fetchAll(PDO::FETCH_ASSOC);
+        $ids = [];
+        foreach ($rows as $r) {
+            if (str_starts_with($this->decryptValue($r['subject']), self::SUBJECT_PREFIX)) {
+                $ids[] = (int) $r['id'];
+            }
+        }
+        if (!$ids) {
+            db_close($db);
+            return;
+        }
         foreach ($ids as $id) {
             foreach (['mitigations', 'mgmt_reviews', 'closures', 'comments', 'files'] as $t) {
                 $db->prepare("DELETE FROM `{$t}` WHERE risk_id = ?")->execute([$id]);
@@ -484,7 +542,7 @@ trait RiskTestSupportTrait
             $db->prepare('DELETE FROM residual_risk_scoring_history WHERE risk_id = ?')->execute([$id]);
             $db->prepare('DELETE FROM risk_scoring WHERE id = ?')->execute([$id]);
         }
-        $db->exec("DELETE FROM risks WHERE subject LIKE '" . self::SUBJECT_PREFIX . "%'");
+        $db->exec('DELETE FROM risks WHERE id IN (' . implode(',', $ids) . ')');
         db_close($db);
     }
 

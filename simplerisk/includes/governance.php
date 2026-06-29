@@ -1625,12 +1625,13 @@ function add_framework($name, $description, $parent=0, $status=1){
     $try_encrypt_name = try_encrypt($name);
     $try_encrypt_descryption = try_encrypt($description);
 
-    // Check if the framework exists
-    $stmt = $db->prepare("SELECT * FROM `frameworks` where name=:name");
-    $stmt->bindParam(":name", $try_encrypt_name);
-    $stmt->execute();
-    $row = $stmt->fetch();
-    if(isset($row[0])){
+    // Check if the framework exists. frameworks.name is encrypted at rest, and
+    // AES-256-GCM uses a random nonce per encryption, so re-encrypting $name
+    // (try_encrypt above) cannot match a stored ciphertext. Use the encryption-aware
+    // lookup instead — get_value_by_name() decrypts stored names for tables in
+    // $tables_where_name_is_encrypted (which includes 'frameworks') before comparing.
+    // Returns null when absent, the framework id when found.
+    if (get_value_by_name('frameworks', $name) !== null) {
         return false;
     }
 

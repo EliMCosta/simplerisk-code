@@ -32,11 +32,17 @@ final class SeparationExtraRiskScopingTest extends E2ETestCase
         $this->snapshot = $this->snapshotSettings(
             'team_separation',
             'allow_team_member_to_risk',
-            'allow_all_to_risk_noassign_team'
+            'allow_all_to_risk_noassign_team',
+            'organizational_hierarchy'
         );
         $this->writeSetting('team_separation', '1');
         $this->writeSetting('allow_team_member_to_risk', '1');
         $this->writeSetting('allow_all_to_risk_noassign_team', '1');
+        // OH must be OFF for this test: when active, get_user_teams() takes the
+        // BU-filter branch (includes/functions.php) and returns [] for a no-BU user,
+        // hiding every team risk. e2e requests are fresh PHP processes, so the
+        // setting flip takes effect per-request (no GLOBALS-memo unset needed).
+        $this->writeSetting('organizational_hierarchy', '0');
         $this->teamA = $this->seedTeam('TEAM_A');
         $this->teamB = $this->seedTeam('TEAM_B');
     }

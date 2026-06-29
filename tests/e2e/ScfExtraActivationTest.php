@@ -40,7 +40,10 @@ final class ScfExtraActivationTest extends E2ETestCase
 
     public function test_scf_root_framework_and_controls_are_present(): void
     {
-        $root = $this->countScalar("SELECT COUNT(*) FROM frameworks WHERE name LIKE '%Secure Controls Framework%'");
+        // frameworks.name is encrypted at rest (ENC1:), so a SQL LIKE on the name
+        // misses the SCF root framework; decrypt each name and match the substring.
+        $names = $this->selectDecryptedColumn('frameworks', 'name');
+        $root = count(array_filter($names, fn (string $n) => str_contains($n, 'Secure Controls Framework')));
         self::assertGreaterThan(0, $root, 'expected the SCF root framework');
         $indexed = $this->countScalar("SELECT COUNT(*) FROM scf_control_index");
         self::assertGreaterThan(0, $indexed, 'expected SCF controls in scf_control_index');
