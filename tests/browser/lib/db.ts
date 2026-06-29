@@ -38,3 +38,24 @@ export function countAuditsForTest(testId: number): number {
   const n = phpScalar(`echo (int)$db->query("SELECT COUNT(*) FROM framework_control_test_audits WHERE test_id = ${(testId | 0)}")->fetchColumn();`);
   return parseInt(n, 10) || 0;
 }
+
+/** The user id (user.value) for a username (0 if not found). */
+export function userIdByUsername(username: string): number {
+  const u = JSON.stringify(username);
+  const n = phpScalar(`$s=$db->prepare("SELECT value FROM user WHERE username = ?"); $s->execute([${u}]); echo (int)$s->fetchColumn();`);
+  return parseInt(n, 10) || 0;
+}
+
+/** The custom_fields.id for a field by name (0 if not found). */
+export function customFieldIdByName(name: string): number {
+  const j = JSON.stringify(name);
+  const n = phpScalar(`$s=$db->prepare("SELECT id FROM custom_fields WHERE name = ?"); $s->execute([${j}]); echo (int)$s->fetchColumn();`);
+  return parseInt(n, 10) || 0;
+}
+
+/** The saved value of a custom field for a risk (DB id) + field id, review_id=0. */
+export function readCustomFieldValue(riskDbId: number, fieldId: number): string {
+  const rid = riskDbId | 0;
+  const fid = fieldId | 0;
+  return phpScalar(`$s=$db->prepare("SELECT value FROM custom_risk_data WHERE risk_id = ? AND field_id = ? AND review_id = 0"); $s->execute([${rid}, ${fid}]); echo (string)$s->fetchColumn();`);
+}

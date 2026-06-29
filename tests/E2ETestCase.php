@@ -416,4 +416,94 @@ abstract class E2ETestCase extends TestCase
             );
         }
     }
+
+    // ------------------------------------------------------------------
+    // Settings snapshot/restore (for tests that toggle an Extra on/off)
+    // ------------------------------------------------------------------
+    // e2e tests run cross-process against the live DB (no transaction to roll
+    // back), so any test that needs an Extra ENABLED must snapshot the settings
+    // it touches in setUp and restore them verbatim in tearDown. Pattern lifted
+    // from ApiAdminTileTest, now shared so every extras e2e test reuses it.
+
+    /** Read a setting value directly from the DB (bypasses any in-process cache). Null = absent row. */
+    protected function readSetting(string $name): ?string
+    {
+        $db = db_open();
+        $stmt = $db->prepare("SELECT value FROM settings WHERE name = ?");
+        $stmt->execute([$name]);
+        $v = $stmt->fetchColumn();
+        db_close($db);
+        return $v === false ? null : (string) $v;
+    }
+
+    /** Restore a setting: null deletes the row (back to absent), else upserts the value. */
+    protected function writeSetting(string $name, ?string $value): void
+    {
+        $db = db_open();
+        if ($value === null) {
+            $db->prepare("DELETE FROM settings WHERE name = ?")->execute([$name]);
+        } else {
+            $db->prepare("INSERT INTO settings (name, value) VALUES (?, ?) ON DUPLICATE KEY UPDATE value = VALUES(value)")
+                ->execute([$name, $value]);
+        }
+        db_close($db);
+    }
+
+    /**
+     * Snapshot the current value of each named setting (null = absent). Force-enable
+     * callers then writeSetting(name,'1'); tearDown calls restoreSettings(snapshot).
+     * A null value is restored by deleting the row, so an originally-absent extra
+     * ends up absent again (no residue).
+     *
+     * @return array<string,?string> setting name => value (null = absent)
+     */
+    protected function snapshotSettings(string ...$names): array
+    {
+        $snapshot = [];
+        foreach ($names as $name) {
+            $snapshot[$name] = $this->readSetting($name);
+        }
+        return $snapshot;
+    }
+
+    /** Restore a snapshot produced by snapshotSettings(). */
+    protected function restoreSettings(array $snapshot): void
+    {
+        foreach ($snapshot as $name => $value) {
+            $this->writeSetting($name, $value);
+        }
+    }
+
+    /**
+     * Authenticated multipart POST (file upload): cookie + csrf + Referer, with
+     * $filePath uploaded under field name $fileField alongside the $fields. Used by
+     * the import-export CSV upload step (admin/importexport.php expects a real file
+     * in $_FILES['ie_csv'], not a urlencoded body). Returns [code, contentType, body, err].
+     */
+    protected function multipartPost(string $path, array $fields, string $fileField, string $filePath): array
+    {
+        $post = $fields + ['__csrf_magic' => $this->csrfToken()];
+        // CURLFile makes curl send multipart/form-data automatically (POSTFIELDS as array).
+        $post[$fileField] = new CURLFile($filePath);
+
+        $ch = curl_init('https://localhost' . $path);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_SSL_VERIFYPEER => false,
+            CURLOPT_SSL_VERIFYHOST => false,
+            CURLOPT_TIMEOUT        => 20,
+            CURLOPT_FOLLOWLOCATION => false,
+            CURLOPT_POST           => true,
+            CURLOPT_POSTFIELDS     => $post,
+            CURLOPT_COOKIEFILE     => $this->cookieJar,
+            CURLOPT_COOKIEJAR      => $this->cookieJar,
+            CURLOPT_HTTPHEADER     => ['Referer: https://localhost/'],
+        ]);
+        $body = curl_exec($ch);
+        $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $type = (string) curl_getinfo($ch, CURLINFO_CONTENT_TYPE);
+        $err  = curl_error($ch);
+        curl_close($ch);
+        return [$code, $type, (string) $body, $err];
+    }
 }

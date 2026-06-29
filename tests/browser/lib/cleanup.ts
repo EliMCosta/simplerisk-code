@@ -42,6 +42,34 @@ foreach ($ids as $id) {
     $db->prepare('DELETE FROM risk_scoring WHERE id = ?')->execute([$id]);
 }
 $db->exec("DELETE FROM risks WHERE subject LIKE '${riskLike}'");
+// Extras seed rows (teams, business units, custom fields) + their junction/data
+// rows. Wrapped in try/catch: if an extra was never activated its tables are
+// absent, and that must not abort the risk sweep above (best-effort, like the TS).
+try {
+    $teams = $db->query("SELECT value FROM team WHERE name LIKE '${riskLike}'")->fetchAll(PDO::FETCH_COLUMN);
+    if ($teams) {
+        $in = implode(',', $teams);
+        $db->exec("DELETE FROM business_unit_to_team WHERE team_id IN ({$in})");
+        $db->exec("DELETE FROM risk_to_team WHERE team_id IN ({$in})");
+        $db->exec("DELETE FROM user_to_team WHERE team_id IN ({$in})");
+    }
+    $bus = $db->query("SELECT id FROM business_unit WHERE name LIKE '${riskLike}'")->fetchAll(PDO::FETCH_COLUMN);
+    if ($bus) {
+        $in = implode(',', $bus);
+        $db->exec("DELETE FROM business_unit_to_team WHERE business_unit_id IN ({$in})");
+    }
+    $db->exec("DELETE FROM business_unit WHERE name LIKE '${riskLike}'");
+    $db->exec("DELETE FROM team WHERE name LIKE '${riskLike}'");
+    $cf = $db->query("SELECT id FROM custom_fields WHERE name LIKE '${riskLike}'")->fetchAll(PDO::FETCH_COLUMN);
+    if ($cf) {
+        $in = implode(',', $cf);
+        $db->exec("DELETE FROM custom_risk_data WHERE field_id IN ({$in})");
+        $db->exec("DELETE FROM custom_template_group_fields WHERE field_id IN ({$in})");
+    }
+    $db->exec("DELETE FROM custom_fields WHERE name LIKE '${riskLike}'");
+    // Clear the restricted user's selected BU so OH specs don't leak across runs.
+    $db->exec("UPDATE user SET selected_business_unit = NULL WHERE username = 'e2e_restricted_user'");
+} catch (Throwable $e) {}
 db_close($db);
 echo "swept";
 `;

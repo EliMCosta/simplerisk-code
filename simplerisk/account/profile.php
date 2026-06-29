@@ -9,6 +9,14 @@ require_once(realpath(__DIR__ . '/../includes/extras.php'));
 // API profile key POSTs must run before any HTML so PRG redirects work.
 if (api_extra() && is_dir(realpath(__DIR__ . '/../extras/api'))) {
     require_once(realpath(__DIR__ . '/../extras/api/index.php'));
+    // This dispatch runs BEFORE render_header_and_sidebar() starts the session, so
+    // $_SESSION['uid'] would otherwise be empty and every self-service key action
+    // (create / toggle / delete) would silently no-op (the POST falls through to a
+    // 200 render with nothing persisted). Start the session first — the same fix
+    // admin/api.php applies for its POST handler. Idempotent if already active.
+    if (function_exists('api_session_start')) {
+        api_session_start();
+    }
     $api_action = $_POST['action'] ?? '';
     if ($_SERVER['REQUEST_METHOD'] === 'POST'
         && in_array($api_action, ['api_profile_create', 'api_profile_toggle', 'api_profile_delete'], true)

@@ -26,6 +26,9 @@ trait RiskTestSupportTrait
 {
     private const SUBJECT_PREFIX = 'E2E_RISK_';
 
+    /** Prefix for extras seed rows (teams, business units, custom fields) — swept in tearDown. */
+    private const EXTRA_PREFIX = 'E2E_';
+
     /** Dedicated restricted account for permission-denied exception tests. */
     protected const RESTRICTED_USER = 'e2e_restricted_user';
     protected const RESTRICTED_PASS = 'E2E-Restricted-2026!xQ';
@@ -168,6 +171,72 @@ trait RiskTestSupportTrait
     protected function restrictedSubmitPost(array $post): array
     {
         return $this->authedPostAs('restricted', '/api/v2/risks/submit', $post);
+    }
+
+    // ------------------------------------------------------------------
+    // Extras seed helpers (team / business-unit / custom-field)
+    // ------------------------------------------------------------------
+    // Separation and Org-Hierarchy scoping tests need real team/BU membership.
+    // ensureRestrictedUser() grants permissions but does NOT seed user_to_team,
+    // so these helpers create the junction rows directly. Every name is E2E_-
+    // prefixed so sweepExtraSeed() (called in tearDown) reclaims them; the team
+    // and business_unit PKs auto-increment, so lastInsertId() returns the id.
+
+    /** E2E_-prefixed unique name for a team/BU/custom-field (swept in tearDown). */
+    private function e2eName(string $tag): string
+    {
+        return self::EXTRA_PREFIX . $tag . '_' . uniqid();
+    }
+
+    /** Insert a team, return its id (team.value auto-increments). */
+    protected function seedTeam(string $tag = 'TEAM'): int
+    {
+        $db = db_open();
+        $db->prepare("INSERT INTO team (name) VALUES (?)")->execute([$this->e2eName($tag)]);
+        $id = (int) $db->lastInsertId();
+        db_close($db);
+        return $id;
+    }
+
+    /** Link a user to a team (INSERT IGNORE so re-runs are idempotent). */
+    protected function assignUserToTeam(int $uid, int $teamId): void
+    {
+        $db = db_open();
+        $db->prepare("INSERT IGNORE INTO user_to_team (user_id, team_id) VALUES (?, ?)")->execute([$uid, $teamId]);
+        db_close($db);
+    }
+
+    /** Link a risk (DB id) to a team. */
+    protected function assignRiskToTeam(int $riskDbId, int $teamId): void
+    {
+        $db = db_open();
+        $db->prepare("INSERT IGNORE INTO risk_to_team (risk_id, team_id) VALUES (?, ?)")->execute([$riskDbId, $teamId]);
+        db_close($db);
+    }
+
+    /**
+     * Insert a business unit and (optionally) link teams to it. Returns the BU id.
+     * business_unit_to_team has a UNIQUE(team_id) — a team may belong to at most one
+     * BU — so use fresh E2E_ teams per test to avoid colliding with real mappings.
+     */
+    protected function seedBusinessUnit(string $tag = 'BU', int ...$teamIds): int
+    {
+        $db = db_open();
+        $db->prepare("INSERT INTO business_unit (name, description) VALUES (?, 'E2E')")->execute([$this->e2eName($tag)]);
+        $buId = (int) $db->lastInsertId();
+        foreach ($teamIds as $teamId) {
+            $db->prepare("INSERT IGNORE INTO business_unit_to_team (business_unit_id, team_id) VALUES (?, ?)")->execute([$buId, $teamId]);
+        }
+        db_close($db);
+        return $buId;
+    }
+
+    /** Pin a user's selected business unit (NULL clears it). Read by get_user_teams' OH override. */
+    protected function setUserSelectedBusinessUnit(int $uid, ?int $buId): void
+    {
+        $db = db_open();
+        $db->prepare("UPDATE user SET selected_business_unit = ? WHERE value = ?")->execute([$buId, $uid]);
+        db_close($db);
     }
 
     // ------------------------------------------------------------------
@@ -431,6 +500,51 @@ trait RiskTestSupportTrait
             $this->deleteRisk($dbId);
         }
         $this->sweepE2ERisks();
+        $this->sweepExtraSeed();
         $this->resetRestrictedUserPermissions();
+    }
+
+    /**
+     * Delete every E2E_-prefixed extras seed row (teams, business units, custom
+     * fields) and the junction / data rows that reference them. Best-effort within
+     * a single connection; wrapped so a missing extras table (extra never activated
+     * on this image) does not turn a green test red.
+     */
+    protected function sweepExtraSeed(): void
+    {
+        $db = db_open();
+        try {
+            // Junction rows referencing E2E_ teams (team_id FK by value, not name).
+            $teams = $db->query("SELECT value FROM team WHERE name LIKE '" . self::EXTRA_PREFIX . "%'")->fetchAll(PDO::FETCH_COLUMN);
+            if ($teams) {
+                $in = implode(',', $teams);
+                $db->exec("DELETE FROM business_unit_to_team WHERE team_id IN ({$in})");
+                $db->exec("DELETE FROM risk_to_team WHERE team_id IN ({$in})");
+                $db->exec("DELETE FROM user_to_team WHERE team_id IN ({$in})");
+            }
+            // Junction rows referencing E2E_ business units, then the units themselves.
+            $bus = $db->query("SELECT id FROM business_unit WHERE name LIKE '" . self::EXTRA_PREFIX . "%'")->fetchAll(PDO::FETCH_COLUMN);
+            if ($bus) {
+                $in = implode(',', $bus);
+                $db->exec("DELETE FROM business_unit_to_team WHERE business_unit_id IN ({$in})");
+            }
+            $db->exec("DELETE FROM business_unit WHERE name LIKE '" . self::EXTRA_PREFIX . "%'");
+            $db->exec("DELETE FROM team WHERE name LIKE '" . self::EXTRA_PREFIX . "%'");
+            // Custom fields + their template-group-field rows + any saved values.
+            $cf = $db->query("SELECT id FROM custom_fields WHERE name LIKE '" . self::EXTRA_PREFIX . "%'")->fetchAll(PDO::FETCH_COLUMN);
+            if ($cf) {
+                $in = implode(',', $cf);
+                $db->exec("DELETE FROM custom_risk_data WHERE field_id IN ({$in})");
+                $db->exec("DELETE FROM custom_template_group_fields WHERE field_id IN ({$in})");
+            }
+            $db->exec("DELETE FROM custom_fields WHERE name LIKE '" . self::EXTRA_PREFIX . "%'");
+            // Any custom value saved against an E2E_ risk (delete_risk does not know
+            // about the extra's custom_risk_data table).
+            $db->exec("DELETE FROM custom_risk_data WHERE risk_id IN (SELECT id FROM risks WHERE subject LIKE '" . self::SUBJECT_PREFIX . "%')");
+        } catch (Throwable $e) {
+            // A missing extras table means the extra was never activated here; the
+            // seed helpers could not have created rows in it, so nothing to clean.
+        }
+        db_close($db);
     }
 }

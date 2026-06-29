@@ -124,28 +124,4 @@ final class ApiAdminTileTest extends E2ETestCase
         }
         return '';
     }
-
-    /** Read a setting value directly from the DB (bypasses any in-process cache). Null = absent. */
-    private function readSetting(string $name): ?string
-    {
-        $db = db_open();
-        $stmt = $db->prepare("SELECT value FROM settings WHERE name = ?");
-        $stmt->execute([$name]);
-        $v = $stmt->fetchColumn();
-        db_close($db);
-        return $v === false ? null : (string) $v;
-    }
-
-    /** Restore a setting: null deletes the row (back to absent), else upserts the value. */
-    private function writeSetting(string $name, ?string $value): void
-    {
-        $db = db_open();
-        if ($value === null) {
-            $db->prepare("DELETE FROM settings WHERE name = ?")->execute([$name]);
-        } else {
-            $db->prepare("INSERT INTO settings (name, value) VALUES (?, ?) ON DUPLICATE KEY UPDATE value = VALUES(value)")
-                ->execute([$name, $value]);
-        }
-        db_close($db);
-    }
 }

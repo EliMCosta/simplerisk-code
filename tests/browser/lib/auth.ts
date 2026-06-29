@@ -8,6 +8,14 @@ import type { Page } from '@playwright/test';
 export const TEST_USER = 'e2e_regression_admin';
 export const TEST_PASS = 'E2E-Regression-Suite-2026!xQ';
 
+/**
+ * Restricted (non-admin) account for separation/OH scoping specs. Matches the
+ * account provisioned by tests/e2e/RiskTestSupportTrait::ensureRestrictedUser
+ * (admin=0, all permissions). Run `bin/test e2e` first so it exists.
+ */
+export const RESTRICTED_USER = 'e2e_restricted_user';
+export const RESTRICTED_PASS = 'E2E-Restricted-2026!xQ';
+
 /** Prefix shared with the PHPUnit e2e suite so the sweeper cleans both. */
 export const E2E_PREFIX = 'E2E_';
 
@@ -25,15 +33,20 @@ export function unique(tag: string): string {
  * cookie injection) is itself a UX assertion: CSRF hidden field render,
  * password wiring, and the success redirect.
  */
-export async function login(page: Page): Promise<void> {
+export async function login(page: Page, user: string = TEST_USER, pass: string = TEST_PASS): Promise<void> {
   await page.goto('/');
-  await page.locator('input[name="user"]').fill(TEST_USER);
-  await page.locator('input[type="password"]').fill(TEST_PASS);
+  await page.locator('input[name="user"]').fill(user);
+  await page.locator('input[type="password"]').fill(pass);
   await page.locator('input[name="user"]').press('Enter');
 
   // Wait until the session is authenticated. The browser's cookie jar is shared
   // with page.request, so this GET carries the freshly-set SimpleRisk session.
   await expectAuthenticated(page);
+}
+
+/** Log in as the restricted (non-admin) user — for separation/OH scoping specs. */
+export async function loginRestricted(page: Page): Promise<void> {
+  await login(page, RESTRICTED_USER, RESTRICTED_PASS);
 }
 
 /** Assert the page's session is authenticated (whoami -> 200). */
