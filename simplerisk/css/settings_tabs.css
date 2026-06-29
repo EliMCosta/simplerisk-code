@@ -1,5 +1,3 @@
-@import url(https://fonts.googleapis.com/css?family=Open+Sans:300,400&subset=latin,latin-ext);
-
 body {
 	overflow-y: scroll;
 }
@@ -39,9 +37,9 @@ ul.tabs li a {
          -o-transition: padding 0.2s ease, margin 0.2s ease;
         -ms-transition: padding 0.2s ease, margin 0.2s ease;
 	transition: padding 0.2s ease, margin 0.2s ease;
-	box-sizing: content-box !important;
 	-webkit-box-sizing: content-box !important;
 	-moz-box-sizing: content-box !important;
+	box-sizing: content-box !important;
 }
 .tabs li:first-child a {
 	z-index: 3;

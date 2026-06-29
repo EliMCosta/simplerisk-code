@@ -19898,7 +19898,7 @@ function add_security_headers($x_frame_options = true, $x_xss_protection = true,
 			if (filter_var($simplerisk_base_url, FILTER_VALIDATE_URL))
 			{
 				// Add the Content-Security-Policy header with the simplerisk base url
-				header("Content-Security-Policy: default-src 'self'; style-src-elem 'unsafe-inline' *.googleapis.com cdn.jsdelivr.net " . $simplerisk_base_url . "; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' 'unsafe-eval' *.googleapis.com cdn.jsdelivr.net; font-src cdn.jsdelivr.net " . $simplerisk_base_url . "; img-src 'self' *.googleapis.com " . $simplerisk_base_url . " data:; connect-src 'self' services.nvd.nist.gov; frame-src 'self';");
+				header("Content-Security-Policy: default-src 'self'; style-src-elem 'unsafe-inline' " . $simplerisk_base_url . "; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; font-src 'self' " . $simplerisk_base_url . "; img-src 'self' " . $simplerisk_base_url . " data:; connect-src 'self' services.nvd.nist.gov; frame-src 'self';");
 			}
 			// Otherwise add the Content-Security-Policy header without it
 			else header("Content-Security-Policy: default-src * 'unsafe-inline' 'unsafe-eval' data:");

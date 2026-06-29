@@ -337,7 +337,7 @@ Card
   -moz-transition: all 0.25s ease;
   transition: all 0.25s ease;
   &:hover {
-    webkit-transform: translateY(-4px) scale(1.01);
+    -webkit-transform: translateY(-4px) scale(1.01);
     -moz-transform: translateY(-4px) scale(1.01);
     -ms-transform: translateY(-4px) scale(1.01);
     -o-transform: translateY(-4px) scale(1.01);
@@ -487,6 +487,7 @@ textarea.form-control {
 select.form-select.form-control-line {
   -webkit-appearance: auto;
   -moz-appearance: auto;
+  appearance: auto;
 }
 .card-header {
   padding: 0.75rem 1.25rem;

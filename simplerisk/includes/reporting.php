@@ -8690,7 +8690,22 @@ function connectivity_visualizer_display($type, $id, $selected_array, $associati
         <div class='card-body my-2 border'>
             <div id='connectivity_visualizer' style='height: 500px;'></div>
             <script type='module'>
-                import {circular} from 'https://cdn.jsdelivr.net/npm/graphology-layout@0.6.1/+esm';
+                // Circular layout (graphology-layout@0.6.1, MIT) — inlined to avoid CDN.
+                function assignCircularLayout(graph) {
+                    const dimensions = ['x', 'y'];
+                    const center = 0.5;
+                    const scale = 1;
+                    const tau = Math.PI * 2;
+                    const offset = (center - 0.5) * scale;
+                    const l = graph.order;
+                    let i = 0;
+                    graph.updateEachNodeAttributes((_, attr) => {
+                        attr[dimensions[0]] = scale * Math.cos((i * tau) / l) + offset;
+                        attr[dimensions[1]] = scale * Math.sin((i * tau) / l) + offset;
+                        i++;
+                        return attr;
+                    }, { attributes: dimensions });
+                }
 
                 // Create a graphology graph
                 const graph = new graphology.Graph();
@@ -8740,7 +8755,7 @@ function connectivity_visualizer_display($type, $id, $selected_array, $associati
 
     echo "              
                 // Set a circular layout of the graph
-                circular.assign(graph);
+                assignCircularLayout(graph);
                 
                 // Instantiate sigma.js and render the graph
                 const sigmaInstance = new Sigma(graph, document.getElementById(\"connectivity_visualizer\"));

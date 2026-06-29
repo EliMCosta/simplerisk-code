@@ -1,0 +1,8 @@
+/* Self-hosted fonts (replaces Google Fonts CDN). */
+@import url("../vendor/node_modules/@fontsource/nunito-sans/latin-300.css");
+@import url("../vendor/node_modules/@fontsource/nunito-sans/latin-400.css");
+@import url("../vendor/node_modules/@fontsource/nunito-sans/latin-600.css");
+@import url("../vendor/node_modules/@fontsource/nunito-sans/latin-700.css");
+@import url("../vendor/node_modules/@fontsource/nunito-sans/latin-800.css");
+@import url("../vendor/node_modules/@fontsource/open-sans/latin-300.css");
+@import url("../vendor/node_modules/@fontsource/open-sans/latin-400.css");

@@ -1,20 +1,9 @@
 {
-  "extends": ["development"],
   "connector": {
-    "name": "local",
-    "options": {
-      "pattern": [
-        "**",
-        "!.git/**",
-        "!tests/tools/coverage/**",
-        "!tests/tools/.phpunit.cache/**"
-      ]
-    }
+    "name": "local"
   },
-  "ignoredUrls": [
-    {
-      "domain": "tests/tools/coverage",
-      "hints": ["*"]
-    }
-  ]
+  "hints": {
+    "compat-api/css": "off",
+    "css-prefix-order": "off"
+  }
 }

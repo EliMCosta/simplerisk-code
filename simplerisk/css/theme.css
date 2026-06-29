@@ -6,15 +6,13 @@ File: scss
 */
 /*******************************/
 /*******************************/
-@import url("https://fonts.googleapis.com/css?family=Nunito+Sans:300,400,600,700,800");
+@import url("fonts.css");
 /*To make the striped rows start with a white colored row*/
 /*Theme Colors*/
 /*Boxed layout width*/
 /*Shadow*/
 /*transitions*/
 /*Dark transparent bg*/
-@import url("https://fonts.googleapis.com/css?family=Nunito+Sans:300,400,600,700,800");
-@import url("https://fonts.googleapis.com/css?family=Nunito+Sans:300,400,600,700,800");
 @import "../vendor/components/font-awesome/css/all.min.css";
 @import "../vendor/node_modules/@mdi/font/css/materialdesignicons.min.css";
 .topbar .dropdown-menu .with-arrow > span {
@@ -247,6 +245,7 @@ body {
   text-align: var(--bs-body-text-align);
   background-color: var(--bs-body-bg);
   -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
   -webkit-tap-highlight-color: rgba(0, 0, 0, 0);
 }
 
@@ -462,8 +461,9 @@ caption {
 }
 
 th {
-  text-align: inherit;
   text-align: -webkit-match-parent;
+  text-align: match-parent;
+  text-align: inherit;
 }
 
 thead,
@@ -525,6 +525,7 @@ button,
 [type=reset],
 [type=submit] {
   -webkit-appearance: button;
+  appearance: button;
 }
 button:not(:disabled),
 [type=button]:not(:disabled),
@@ -582,6 +583,7 @@ legend + * {
 
 [type=search] {
   -webkit-appearance: textfield;
+  appearance: textfield;
   outline-offset: -2px;
 }
 
@@ -595,6 +597,7 @@ legend + * {
 */
 ::-webkit-search-decoration {
   -webkit-appearance: none;
+  appearance: none;
 }
 
 ::-webkit-color-swatch-wrapper {
@@ -604,6 +607,7 @@ legend + * {
 ::file-selector-button {
   font: inherit;
   -webkit-appearance: button;
+  appearance: button;
 }
 
 output {
@@ -1910,31 +1914,26 @@ progress {
 
 .table-responsive {
   overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
 }
 
 @media (max-width: 575.98px) {
   .table-responsive-sm {
     overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
   }
 }
 @media (max-width: 767.98px) {
   .table-responsive-md {
     overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
   }
 }
 @media (max-width: 991.98px) {
   .table-responsive-lg {
     overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
   }
 }
 @media (max-width: 1599.98px) {
   .table-responsive-xl {
     overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
   }
 }
 .form-label {
@@ -2213,6 +2212,7 @@ textarea.form-control-lg {
   background-position: center;
   background-size: contain;
   border: var(--bs-border-width) solid var(--bs-border-color);
+  -webkit-print-color-adjust: exact;
   print-color-adjust: exact;
 }
 .form-check-input[type=checkbox] {
@@ -2774,6 +2774,7 @@ textarea.form-control-lg {
   text-decoration: none;
   vertical-align: middle;
   cursor: pointer;
+  -webkit-user-select: none;
   user-select: none;
   border: var(--bs-btn-border-width) solid var(--bs-btn-border-color);
   border-radius: var(--bs-btn-border-radius);
@@ -5072,6 +5073,7 @@ textarea.form-control-lg {
 }
 .btn-close:disabled, .btn-close.disabled {
   pointer-events: none;
+  -webkit-user-select: none;
   user-select: none;
   opacity: var(--bs-btn-close-disabled-opacity);
 }
@@ -8457,14 +8459,17 @@ textarea.form-control-lg {
 }
 
 .user-select-all {
+  -webkit-user-select: all !important;
   user-select: all !important;
 }
 
 .user-select-auto {
+  -webkit-user-select: auto !important;
   user-select: auto !important;
 }
 
 .user-select-none {
+  -webkit-user-select: none !important;
   user-select: none !important;
 }
 
@@ -11728,7 +11733,7 @@ Card
   transition: all 0.25s ease;
 }
 .card-hover:hover {
-  webkit-transform: translateY(-4px) scale(1.01);
+  -webkit-transform: translateY(-4px) scale(1.01);
   -moz-transform: translateY(-4px) scale(1.01);
   -ms-transform: translateY(-4px) scale(1.01);
   -o-transform: translateY(-4px) scale(1.01);
@@ -11876,6 +11881,7 @@ textarea.form-control {
 select.form-select.form-control-line {
   -webkit-appearance: auto;
   -moz-appearance: auto;
+  appearance: auto;
 }
 
 .card-header {
@@ -11987,6 +11993,7 @@ Notify
   -o-animation-iteration-count: infinite;
   -webkit-animation: heartbit 1s ease-out;
   -webkit-animation-iteration-count: infinite;
+  animation: heartbit 1s ease-out;
   animation-iteration-count: infinite;
 }
 .notify .point {
@@ -12042,6 +12049,28 @@ Notify
   }
   100% {
     -webkit-transform: scale(1);
+    opacity: 0;
+  }
+}
+@keyframes heartbit {
+  0% {
+    transform: scale(0);
+    opacity: 0;
+  }
+  25% {
+    transform: scale(0.1);
+    opacity: 0.1;
+  }
+  50% {
+    transform: scale(0.5);
+    opacity: 0.3;
+  }
+  75% {
+    transform: scale(0.8);
+    opacity: 0.5;
+  }
+  100% {
+    transform: scale(1);
     opacity: 0;
   }
 }
@@ -12723,6 +12752,7 @@ html body .waves-notransition {
   line-height: 2.5em;
   border-radius: 50%;
   -webkit-mask-image: none;
+  mask-image: none;
 }
 
 .waves-input-wrapper {
@@ -15896,6 +15926,7 @@ body .jqstooltip {
   -moz-appearance: none;
   -webkit-appearance: none;
   -o-appearance: none;
+  appearance: none;
   background-size: auto;
 }
 
@@ -16465,7 +16496,7 @@ User card page
 .el-element-overlay .el-card-item .el-overlay-1:hover img {
   -ms-transform: scale(1.2) translateZ(0);
   -webkit-transform: scale(1.2) translateZ(0);
-  /* transform: scale(1.2) translateZ(0); */
+  transform: scale(1.2) translateZ(0);
 }
 .el-element-overlay .el-card-item .el-overlay-1 .el-info {
   text-decoration: none;
@@ -19259,6 +19290,7 @@ td.playbook_action_name {
   margin: 0;
   display: -webkit-box;
   -webkit-line-clamp: 2;
+  line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
