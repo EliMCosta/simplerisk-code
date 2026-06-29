@@ -19,6 +19,20 @@ export function countRisksBySubject(subject: string): number {
   return parseInt(n, 10) || 0;
 }
 
+/** A plain risks column for the risk with this subject (e.g. 'reference_id'). */
+export function riskColumn(subject: string, column: string): string {
+  const subjJson = JSON.stringify(subject);
+  // column is validated to a safe identifier (letters/underscore) before interpolation.
+  if (!/^[A-Za-z_]+$/.test(column)) throw new Error(`unsafe column: ${column}`);
+  return phpScalar(`$s=$db->prepare("SELECT \`${column}\` FROM risks WHERE subject = ?"); $s->execute([${subjJson}]); echo (string)$s->fetchColumn();`);
+}
+
+/** The current calculated_risk for the risk with this subject (from risk_scoring). */
+export function riskCalculatedRisk(subject: string): string {
+  const subjJson = JSON.stringify(subject);
+  return phpScalar(`$s=$db->prepare("SELECT rs.calculated_risk FROM risk_scoring rs JOIN risks r ON r.id = rs.id WHERE r.subject = ?"); $s->execute([${subjJson}]); echo (string)$s->fetchColumn();`);
+}
+
 /** Count of framework_control_test_audits initiated for a given test id. */
 export function countAuditsForTest(testId: number): number {
   const n = phpScalar(`echo (int)$db->query("SELECT COUNT(*) FROM framework_control_test_audits WHERE test_id = ${(testId | 0)}")->fetchColumn();`);

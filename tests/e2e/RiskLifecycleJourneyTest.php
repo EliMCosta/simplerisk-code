@@ -27,18 +27,11 @@ declare(strict_types=1);
 
 final class RiskLifecycleJourneyTest extends E2ETestCase
 {
-    private const SUBJECT_PREFIX = 'E2E_RISK_';
-
-    /** @var int[] db ids of risks created during a test, deleted in tearDown. */
-    private array $createdRiskDbIds = [];
+    use RiskTestSupportTrait;
 
     protected function tearDown(): void
     {
-        foreach ($this->createdRiskDbIds as $dbId) {
-            $this->deleteRisk($dbId);
-        }
-        // Safety net: any E2E_RISK_ row that escaped per-test tracking.
-        $this->sweepE2ERisks();
+        $this->tearDownRisks();
         parent::tearDown();
     }
 
@@ -190,131 +183,5 @@ final class RiskLifecycleJourneyTest extends E2ETestCase
         self::assertSame('Closed', $this->readRiskRow($publicId)['status']);
         $this->actionPost('/api/v2/management/risk/reopen?id=' . $publicId, []);
         self::assertNotSame('Closed', $this->readRiskRow($publicId)['status']);
-    }
-
-    // ---------- helpers ----------
-
-    /**
-     * Submit a risk over the API and return its PUBLIC id (db id + 1000).
-     * Tracks the db id for tearDown cleanup.
-     */
-    private function submitRisk(string $subject): int
-    {
-        [$code, , $body] = $this->actionPost('/api/v2/risks/submit', ['subject' => $subject]);
-        self::assertSame(200, $code, "risk submit returned {$code}: {$body}");
-        $decoded = $this->decodeJson($body, 'risk submit');
-        $publicId = (int) ($decoded['data']['risk_id'] ?? 0);
-        self::assertGreaterThan(1000, $publicId, "expected data.risk_id > 1000, got: {$body}");
-        $this->createdRiskDbIds[] = self::dbId($publicId);
-        return $publicId;
-    }
-
-    /**
-     * Authenticated POST to a risk-action Slim route. Delegates to
-     * E2ETestCase::authedPost (cookie + csrf token) with a Referer pinned to the
-     * risk detail page so getTabHtml() (called by saveMitigation/saveReview/
-     * updateStatus/closerisk) does not warn on a missing server var.
-     */
-    private function actionPost(string $path, array $post): array
-    {
-        return $this->authedPost($path, $post, ['referer' => 'https://localhost/management/view.php']);
-    }
-
-    private function uniqueSubject(string $tag): string
-    {
-        return self::SUBJECT_PREFIX . $tag . '_' . uniqid();
-    }
-
-    private static function dbId(int $publicId): int
-    {
-        return $publicId - 1000;
-    }
-
-    /** subject + status (+ mitigation_id, mgmt_review) for a risk by public id. */
-    private function readRiskRow(int $publicId): array
-    {
-        $db = db_open();
-        $stmt = $db->prepare('SELECT id, subject, status, mitigation_id, mgmt_review FROM risks WHERE id = ?');
-        $stmt->execute([self::dbId($publicId)]);
-        $row = $stmt->fetch(PDO::FETCH_ASSOC);
-        db_close($db);
-        self::assertIsArray($row, "risk db row missing for public id {$publicId}");
-        return $row;
-    }
-
-    private function countScalar(string $sql, array $params = []): int
-    {
-        $db = db_open();
-        $stmt = $db->prepare($sql);
-        $stmt->execute($params);
-        $c = (int) $stmt->fetchColumn();
-        db_close($db);
-        return $c;
-    }
-
-    /**
-     * The first status that a plain updateStatus can move a New risk to: any
-     * status whose name is not 'New' and not 'Closed' (Closed is the closerisk
-     * path, which also writes a closure). Returns ['value'=>int,'name'=>string]
-     * or null if none qualify.
-     */
-    private function changeableStatus(): ?array
-    {
-        $db = db_open();
-        $row = $db->query("SELECT value, name FROM status WHERE name != 'New' AND name != 'Closed' ORDER BY value LIMIT 1")
-            ->fetch(PDO::FETCH_ASSOC);
-        db_close($db);
-        return $row === false ? null : ['value' => (int) $row['value'], 'name' => (string) $row['name']];
-    }
-
-    /** A valid mgmt-review decision value (the review table's value column). */
-    private function reviewDecisionValue(): int
-    {
-        $v = $this->countScalar('SELECT value FROM review ORDER BY value LIMIT 1');
-        return $v ?: 1;
-    }
-
-    /** First available close_reason value. */
-    private function firstCloseReasonValue(): int
-    {
-        $v = $this->countScalar('SELECT value FROM close_reason ORDER BY value LIMIT 1');
-        return $v ?: 1;
-    }
-
-    /**
-     * The test admin's user id. mitigation_owner (and any other owner field)
-     * must reference a real user, and this process's own $_SESSION is empty (it
-     * curls Apache over HTTP), so we read the provisioned admin's id directly.
-     */
-    private function testAdminUid(): int
-    {
-        return $this->countScalar('SELECT value FROM user WHERE username = ?', [E2ETestCase::TEST_USER]) ?: 1;
-    }
-
-    private function deleteRisk(int $dbId): void
-    {
-        // delete_risk cleans risks/comments/mitigations/mgmt_reviews/closures/files.
-        if (function_exists('delete_risk')) {
-            delete_risk($dbId);
-        }
-    }
-
-    /**
-     * Last-resort cleanup: delete any leftover E2E_RISK_ risks and the children
-     * delete_risk() would have removed for them — mitigations, mgmt_reviews,
-     * closures, comments, files (all carry a risk_id) — so escapee risks do not
-     * leave orphaned rows behind. Children are deleted before the risks row.
-     */
-    private function sweepE2ERisks(): void
-    {
-        $db = db_open();
-        $ids = $db->query("SELECT id FROM risks WHERE subject LIKE '" . self::SUBJECT_PREFIX . "%'")->fetchAll(PDO::FETCH_COLUMN);
-        foreach ($ids as $id) {
-            foreach (['mitigations', 'mgmt_reviews', 'closures', 'comments', 'files'] as $t) {
-                $db->prepare("DELETE FROM `{$t}` WHERE risk_id = ?")->execute([$id]);
-            }
-        }
-        $db->exec("DELETE FROM risks WHERE subject LIKE '" . self::SUBJECT_PREFIX . "%'");
-        db_close($db);
     }
 }

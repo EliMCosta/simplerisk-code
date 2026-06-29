@@ -31,6 +31,15 @@ abstract class E2ETestCase extends TestCase
     /** @var string cookie jar path holding the authenticated session cookie */
     protected string $cookieJar = '';
 
+    /**
+     * Named sessions beyond the admin session (e.g. 'restricted' for
+     * permission-denied tests). Each maps to ['jar'=>path, 'csrf'=>token].
+     * The admin session reuses $cookieJar and is NOT listed here.
+     *
+     * @var array<string, array{jar:string, csrf:string}>
+     */
+    protected array $extraSessions = [];
+
     protected function setUp(): void
     {
         if (defined('SIMPLERISK_TEST_NO_DB')) {
@@ -54,6 +63,13 @@ abstract class E2ETestCase extends TestCase
         if ($this->cookieJar !== '' && is_file($this->cookieJar)) {
             @unlink($this->cookieJar);
         }
+        // Unlink any extra (non-admin) session cookie jars created during the test.
+        foreach ($this->extraSessions as $session) {
+            if (is_file($session['jar'])) {
+                @unlink($session['jar']);
+            }
+        }
+        $this->extraSessions = [];
     }
 
     /**
@@ -106,11 +122,30 @@ abstract class E2ETestCase extends TestCase
      */
     protected function sessionLogin(): bool
     {
+        return $this->loginSession(self::TEST_USER, self::TEST_PASS, 'admin');
+    }
+
+    /**
+     * Log $user/$pass into a named session, returning true once authenticated.
+     * The 'admin' session reuses $this->cookieJar (created in setUp); any other
+     * $sessionName allocates a fresh cookie jar registered in $extraSessions.
+     * This is what lets the permission-denied tests drive a second, restricted
+     * user with its own session cookie AND its own csrf token (csrfTokenFor).
+     */
+    protected function loginSession(string $user, string $pass, string $sessionName): bool
+    {
+        if ($sessionName === 'admin') {
+            $jar = $this->cookieJar;
+        } else {
+            $jar = tempnam(sys_get_temp_dir(), 'e2e' . $sessionName);
+            $this->extraSessions[$sessionName] = ['jar' => $jar, 'csrf' => ''];
+        }
+
         // 1. GET the login page to seed the session cookie + login_csrf_token.
         //    cookie=>true is REQUIRED so curl persists the Set-Cookie into the jar;
         //    without it the POST below is a different (anonymous) session and the
         //    login_csrf_token check fails.
-        [, , $html, $err] = $this->request('GET', '/index.php', ['cookie' => true]);
+        [, , $html, $err] = $this->request('GET', '/index.php', ['cookie' => true, 'jar' => $jar]);
         if ($err !== '' || $html === '') {
             return false;
         }
@@ -122,16 +157,17 @@ abstract class E2ETestCase extends TestCase
         // 2. POST credentials using the same cookie jar so the session matches.
         $this->request('POST', '/index.php', [
             'cookie' => true,
+            'jar'    => $jar,
             'post'   => http_build_query([
                 'submit'     => 1,
-                'user'       => self::TEST_USER,
-                'pass'       => self::TEST_PASS,
+                'user'       => $user,
+                'pass'       => $pass,
                 'csrf_token' => $csrf,
             ]),
         ]);
 
         // 3. Confirm the session is authenticated (cookie=>true sends the session).
-        [$code] = $this->request('GET', '/api/v2/whoami', ['cookie' => true]);
+        [$code] = $this->request('GET', '/api/v2/whoami', ['cookie' => true, 'jar' => $jar]);
         return $code === 200;
     }
 
@@ -157,10 +193,13 @@ abstract class E2ETestCase extends TestCase
      * so a 302-to-login can never masquerade as a 200.
      *
      * When 'cookie' is true, the authenticated session cookie (in $this->cookieJar)
-     * is sent AND any Set-Cookie is persisted back to the jar.
+     * is sent AND any Set-Cookie is persisted back to the jar. Pass ['jar'=>path]
+     * to override the cookie jar (used by the *As session helpers for a second,
+     * named session); when omitted the admin $this->cookieJar is used.
      */
     protected function request(string $method, string $path, array $opts = []): array
     {
+        $jar = $opts['jar'] ?? $this->cookieJar;
         $ch = curl_init('https://localhost' . $path);
         $curlopt = [
             CURLOPT_RETURNTRANSFER => true,
@@ -171,11 +210,16 @@ abstract class E2ETestCase extends TestCase
             CURLOPT_CUSTOMREQUEST  => $method,
         ];
         if (!empty($opts['cookie'])) {
-            $curlopt[CURLOPT_COOKIEFILE] = $this->cookieJar; // send
-            $curlopt[CURLOPT_COOKIEJAR]  = $this->cookieJar; // persist
+            $curlopt[CURLOPT_COOKIEFILE] = $jar; // send
+            $curlopt[CURLOPT_COOKIEJAR]  = $jar; // persist
         }
         if (isset($opts['post'])) {
-            $curlopt[CURLOPT_POST]       = true;
+            // CURLOPT_POST forces the POST verb, so only set it for actual POSTs;
+            // for PATCH/PUT-with-body, CUSTOMREQUEST (set above) + POSTFIELDS sends
+            // the body with the right verb.
+            if ($method === 'POST') {
+                $curlopt[CURLOPT_POST] = true;
+            }
             $curlopt[CURLOPT_POSTFIELDS] = $opts['post'];
         }
         if (!empty($opts['headers'])) {
@@ -191,10 +235,18 @@ abstract class E2ETestCase extends TestCase
         return [$code, $type, (string) $body, $err];
     }
 
-    /** Authenticated GET carrying the session cookie. */
-    protected function authedGet(string $path): array
+    /**
+     * Authenticated GET carrying the session cookie. Pass ['referer'=>'<url>'] to
+     * pin a Referer (some GET handlers, e.g. overviewForm, render a tab template
+     * that warns on a missing HTTP_REFERER); by default no Referer is sent.
+     */
+    protected function authedGet(string $path, array $opts = []): array
     {
-        return $this->request('GET', $path, ['cookie' => true]);
+        $requestOpts = ['cookie' => true];
+        if (isset($opts['referer'])) {
+            $requestOpts['headers'] = ['Referer: ' . $opts['referer']];
+        }
+        return $this->request('GET', $path, $requestOpts);
     }
 
     /** Unauthenticated GET (no cookie) — for auth-gate assertions. */
@@ -262,6 +314,76 @@ abstract class E2ETestCase extends TestCase
     protected function authedDelete(string $path): array
     {
         return $this->request('DELETE', $path, ['cookie' => true]);
+    }
+
+    // ------------------------------------------------------------------
+    // Named-session variants (for the restricted user / second session)
+    // ------------------------------------------------------------------
+
+    /** The cookie jar for a named session ('admin' resolves to $this->cookieJar). */
+    protected function jarFor(string $sessionName): string
+    {
+        if ($sessionName === 'admin') {
+            return $this->cookieJar;
+        }
+        return $this->extraSessions[$sessionName]['jar'] ?? $this->cookieJar;
+    }
+
+    /** request() bound to a named session's cookie jar. */
+    protected function requestAs(string $sessionName, string $method, string $path, array $opts = []): array
+    {
+        $opts['jar'] = $this->jarFor($sessionName);
+        return $this->request($method, $path, $opts);
+    }
+
+    /**
+     * The session's csrf-magic token for a NAMED session, fetched+cached per
+     * session. 'admin' delegates to the existing csrfToken() cache; other
+     * sessions keep their own cache in $extraSessions[<name>]['csrf'] so the two
+     * tokens (admin vs restricted) never collide.
+     */
+    protected function csrfTokenFor(string $sessionName): string
+    {
+        if ($sessionName === 'admin') {
+            return $this->csrfToken();
+        }
+        if (!isset($this->extraSessions[$sessionName])) {
+            self::fail("No session named '{$sessionName}' — call loginSession('{$sessionName}') first.");
+        }
+        if ($this->extraSessions[$sessionName]['csrf'] !== '') {
+            return $this->extraSessions[$sessionName]['csrf'];
+        }
+        [, , $html] = $this->requestAs($sessionName, 'GET', '/management/index.php', ['cookie' => true]);
+        if (preg_match('/name=["\']__csrf_magic["\'][^>]*value=["\']([^"\']+)["\']/i', $html, $m)
+            || preg_match('/value=["\']([^"\']+)["\'][^>]*name=["\']__csrf_magic["\']/i', $html, $m)
+        ) {
+            $this->extraSessions[$sessionName]['csrf'] = $m[1];
+            return $m[1];
+        }
+        self::fail("Could not extract the __csrf_magic token for session '{$sessionName}'.");
+    }
+
+    /** Authenticated GET from a named session (see authedGet for opts). */
+    protected function authedGetAs(string $sessionName, string $path, array $opts = []): array
+    {
+        $requestOpts = ['cookie' => true];
+        if (isset($opts['referer'])) {
+            $requestOpts['headers'] = ['Referer: ' . $opts['referer']];
+        }
+        return $this->requestAs($sessionName, 'GET', $path, $requestOpts);
+    }
+
+    /** Authenticated POST from a named session (cookie + that session's csrf token + Referer). */
+    protected function authedPostAs(string $sessionName, string $path, array $post = [], array $opts = []): array
+    {
+        $post['__csrf_magic'] = $this->csrfTokenFor($sessionName);
+        $requestOpts = ['cookie' => true, 'post' => http_build_query($post)];
+        if (!empty($opts['no_referer'])) {
+            // omit Referer entirely
+        } else {
+            $requestOpts['headers'] = ['Referer: ' . ($opts['referer'] ?? 'https://localhost/')];
+        }
+        return $this->requestAs($sessionName, 'POST', $path, $requestOpts);
     }
 
     /** Decode a JSON body or fail the test with context. */

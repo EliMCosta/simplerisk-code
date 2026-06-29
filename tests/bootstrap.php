@@ -34,3 +34,4 @@ if (file_exists($configFile)) {
 require_once __DIR__ . '/TestCase.php';
 require_once __DIR__ . '/E2ETestCase.php';
 require_once __DIR__ . '/e2e/ComplianceSeedTrait.php';
+require_once __DIR__ . '/e2e/RiskTestSupportTrait.php';
