@@ -203,6 +203,67 @@ abstract class E2ETestCase extends TestCase
         return $this->request('GET', $path);
     }
 
+    /** @var string cached csrf-magic token for the session (fetched lazily, reused across POSTs). */
+    protected string $csrfTokenCache = '';
+
+    /**
+     * The session's csrf-magic token, fetched once from the submit-risk page and
+     * cached for the test. Every authenticated /api/v2 request runs
+     * is_session_authenticated() -> include_csrf_magic() -> csrf_init() ->
+     * csrf_check() (csrf-magic.php:432), so every Slim POST must carry a valid
+     * __csrf_magic value. The token is session-derived (sid:csrf_hash(session_id))
+     * and injected into any rendered form, so it is valid for every route hit
+     * with the same cookie jar.
+     */
+    protected function csrfToken(): string
+    {
+        if ($this->csrfTokenCache !== '') {
+            return $this->csrfTokenCache;
+        }
+        [$code, , $html] = $this->authedGet('/management/index.php');
+        if ($code === 200
+            && (preg_match('/name=["\']__csrf_magic["\'][^>]*value=["\']([^"\']+)["\']/i', $html, $m)
+                || preg_match('/value=["\']([^"\']+)["\'][^>]*name=["\']__csrf_magic["\']/i', $html, $m))
+        ) {
+            $this->csrfTokenCache = $m[1];
+            return $this->csrfTokenCache;
+        }
+        // Fail fast with context: otherwise every authedPost sends an empty
+        // token and fails downstream with no hint that extraction was the cause.
+        self::fail(
+            'Could not extract the __csrf_magic token from /management/index.php '
+            . "(HTTP {$code}, " . strlen($html) . ' bytes) — the authenticated session may be degraded.'
+        );
+    }
+
+    /**
+     * Authenticated POST: session cookie + the csrf-magic token + a Referer
+     * header. The Referer keeps getTabHtml()-style handlers from warning on a
+     * missing server var, which under display_errors=on would prepend text and
+     * corrupt the JSON. Pass ['referer' => '<url>'] to override the default
+     * Referer, or ['no_referer' => true] to omit it.
+     */
+    protected function authedPost(string $path, array $post = [], array $opts = []): array
+    {
+        $post['__csrf_magic'] = $this->csrfToken();
+        $requestOpts = ['cookie' => true, 'post' => http_build_query($post)];
+        if (!empty($opts['no_referer'])) {
+            // omit Referer entirely
+        } else {
+            $requestOpts['headers'] = ['Referer: ' . ($opts['referer'] ?? 'https://localhost/')];
+        }
+        return $this->request('POST', $path, $requestOpts);
+    }
+
+    /**
+     * Authenticated DELETE. csrf_check() only validates POST (csrf-magic.php:166),
+     * so no token is needed for DELETE routes — only the session cookie.
+     */
+    protected function authedDelete(string $path): array
+    {
+        return $this->request('DELETE', $path, ['cookie' => true]);
+    }
+
     /** Decode a JSON body or fail the test with context. */
     protected function decodeJson(string $body, string $context = ''): array
     {

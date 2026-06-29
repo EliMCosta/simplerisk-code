@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# Host wrapper: run the Playwright browser/UX acceptance suite from the host
+# against the published dev instance (https://localhost:8443).
+#
+# Usage: bin/test-browser [playwright args...]
+#   e.g. bin/test-browser                  # run all browser specs
+#        bin/test-browser --grep "tag modal"
+#        bin/test-browser --headed
+#
+# Prerequisites (one-time):
+#   cd tests/browser && npm install && npx playwright install firefox
+#   bin/test e2e   # provisions the shared e2e_regression_admin test account
+#
+# NOT part of `bin/test`; the PHP PHPUnit suites are unaffected.
+set -euo pipefail
+
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")"/../tests/browser && pwd)"
+cd "$DIR"
+
+if [ ! -d node_modules ]; then
+  echo "node_modules missing — run: (cd tests/browser && npm install && npx playwright install firefox)" >&2
+  exit 1
+fi
+
+exec npx playwright test "$@"
