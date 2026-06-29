@@ -67,7 +67,7 @@ function display()
 	}
 	// Otherwise, the Extra does not exist
 	else {
-		echo "<a href='https://www.simplerisk.com/extras' target='_blank' class='text-info'>Purchase the Extra</a>\n";
+		display_self_managed_extra_notice('api');
 	}
 }
 

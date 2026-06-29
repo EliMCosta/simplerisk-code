@@ -710,8 +710,8 @@ if (api_v2_is_authenticated())
         }
     }
 
-    // If the instance is registered
-    if (get_setting('registration_registered') != 0)
+    // If the upgrade extra is installed on disk
+    if (file_exists(realpath(__DIR__ . '/../../extras/upgrade/index.php')))
     {
         // Require file
         $required_file = realpath(__DIR__ . '/../../extras/upgrade/includes/api.php');

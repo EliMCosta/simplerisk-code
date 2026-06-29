@@ -6,6 +6,7 @@
 
 require_once(realpath(__DIR__ . '/../vendor/autoload.php'));
 require_once(realpath(__DIR__ . '/escaper.php'));
+require_once(realpath(__DIR__ . '/database_schema.php'));
 
 // Include Escaper for HTML Output Encoding
 $escaper = new simpleriskEscaper();
@@ -888,7 +889,6 @@ function step_6_simplerisk_installation()
     $full_name = $_POST['full_name'] ?? '';
     $email = $_POST['email'] ?? '';
     $password = $_POST['password'] ?? '';
-    $mailing_list = isset($_POST['mailing_list']) ? 'true' : 'false';
 
     // Generate password for SimpleRisk user
     $sr_pass = installer_generate_token(20);
@@ -935,8 +935,7 @@ function step_6_simplerisk_installation()
     $app_version = installer_get_current_version();
     $file_map = ['en' => "simplerisk-en-$app_version.sql", 'es' => "simplerisk-es-$app_version.sql", 'bp' => "simplerisk-bp-$app_version.sql"];
     $file = $file_map[$default_language] ?? $file_map['en'];
-    $branch = defined('DB_BRANCH') ? DB_BRANCH : 'master';
-    $file_url = "https://raw.githubusercontent.com/simplerisk/database/{$branch}/{$file}";
+    $file_url = simplerisk_database_schema_url($file);
 
     $web_file = @fopen($file_url, 'r');
 
@@ -948,7 +947,7 @@ function step_6_simplerisk_installation()
         if ($latest_version && $latest_version !== $app_version) {
             $fallback_map = ['en' => "simplerisk-en-$latest_version.sql", 'es' => "simplerisk-es-$latest_version.sql", 'bp' => "simplerisk-bp-$latest_version.sql"];
             $fallback_file = $fallback_map[$default_language] ?? $fallback_map['en'];
-            $file_url = "https://raw.githubusercontent.com/simplerisk/database/{$branch}/{$fallback_file}";
+            $file_url = simplerisk_database_schema_url($fallback_file);
             $web_file = @fopen($file_url, 'r');
         }
     }
@@ -1003,8 +1002,6 @@ function step_6_simplerisk_installation()
     $schedule = rand(0,59) . ' ' . rand(0,23) . ' * * *';
     $stmt = $db->prepare("INSERT INTO settings (name,value) VALUES ('schedule_cron_ping', ?) ON DUPLICATE KEY UPDATE value=VALUES(value)");
     $stmt->execute([$schedule]);
-
-    installer_instance_registration($instance_id, $full_name, $email, $mailing_list);
 
     if (create_config_file($db_host, $db_port, $sr_user, $sr_pass, $sr_db, $db_sessions, $db_ssl_cert_path)) {
         echo "Configuration file has been created successfully.<br><br>";
@@ -1483,41 +1480,6 @@ function load_file($db_host, $db_port, $db_user, $db_pass, $sr_db, $memory_file)
     return true;
 }
 
-/*********************************************
- * FUNCTION: INSTALLER INSTANCE REGISTRATION *
- *********************************************/
-function installer_instance_registration($instance_id, $full_name, $email, $mailing_list)
-{
-    // Create the data to send
-    $data = array(
-        'action' => 'installer_registration',
-        'instance_id' => $instance_id,
-        'name' => $full_name,
-        'email' => $email,
-        'mailing_list' => $mailing_list,
-    );
-
-    // Build the HTTP query for the POST data
-    $http_query = http_build_query($data);
-
-    // Configuration for the SimpleRisk service call
-    if (defined('SERVICES_URL'))
-    {
-        $url = SERVICES_URL . "/index.php";
-    }
-    else $url = "https://services.simplerisk.com/index.php";
-
-    // Make the curl request
-    $ch = curl_init();
-    curl_setopt($ch, CURLOPT_URL, $url);
-    curl_setopt($ch, CURLOPT_HTTPHEADER, array('Content-Type: application/x-www-form-urlencoded'));
-    curl_setopt($ch, CURLOPT_POST, count($data));
-    curl_setopt($ch, CURLOPT_POSTFIELDS, $http_query);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    $response  = curl_exec($ch);
-    curl_close($ch);
-}
-
 /*******************************************
  * FUNCTION: INSTALLER GET CURRENT VERSION *
  *******************************************/
@@ -1533,46 +1495,7 @@ function installer_get_current_version()
  ******************************************/
 function installer_get_latest_version()
 {
-    // Url for SimpleRisk current versions
-    if (defined('UPDATES_URL'))
-    {
-        $url = UPDATES_URL . '/releases.xml';
-    }
-    else $url = 'https://raw.githubusercontent.com/simplerisk/updates.simplerisk.com/updates.simplerisk.com/releases.xml';
-
-    // Set the default socket timeout to 5 seconds
-    ini_set('default_socket_timeout', 5);
-
-    // Get the file headers for the URL
-    $file_headers = @get_headers($url, 1);
-
-    // If we were unable to connect to the URL
-    if(!$file_headers || $file_headers[0] == 'HTTP/1.1 404 Not Found')
-    {
-        installer_log("Unable to connect to {$url}", 'warning');
-    }
-    // We were able to connect to the URL
-    else
-    {
-        // Load the versions file
-        if (defined('UPDATES_URL'))
-        {
-            $version_page = file_get_contents(UPDATES_URL . '/releases.xml');
-        }
-        else $version_page = file_get_contents('https://raw.githubusercontent.com/simplerisk/updates.simplerisk.com/updates.simplerisk.com/releases.xml');
-
-        // Convert it to be an array
-        $releases_array = json_decode(json_encode(new SimpleXMLElement($version_page)), true);
-        $latest_release = reset($releases_array);
-        $latest_versions = [];
-        $latest_versions['appversion'] = $latest_release[0]['@attributes']['version'];
-
-        // Adding aliases, as the values not always requested with the same name the XML serves it
-        $latest_version = $latest_versions['appversion'];
-
-        // Return the latest version
-        return $latest_version;
-    }
+    return installer_get_current_version();
 }
 
 /*****************************************
@@ -1597,7 +1520,7 @@ function installer_check_app_version($current_app_version, $latest_app_version)
 function installer_check_web_connectivity()
 {
     // URLs to check
-    $urls = array("https://register.simplerisk.com", "https://services.simplerisk.com", "https://services.nvd.nist.gov", "https://github.com", "https://raw.githubusercontent.com", "https://simplerisk-downloads.s3.amazonaws.com");
+    $urls = array("https://services.nvd.nist.gov", "https://github.com", "https://raw.githubusercontent.com");
 
     // Create an empty array
     $array = array();

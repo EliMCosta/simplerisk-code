@@ -84,8 +84,9 @@
 		// Otherwise, the Extra does not exist
 		} else {
 			echo "
-					<div class='card-body my-2 border'>
-						<a href='https://www.simplerisk.com/extras' target='_blank' class='text-info'>Purchase the Extra</a>
+					<div class='card-body my-2 border'>";
+            display_self_managed_extra_notice('organizational_hierarchy');
+            echo "
 					</div>
 			";
 		}

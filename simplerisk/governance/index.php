@@ -420,7 +420,7 @@
                 <h4>Try one of the following ways to load frameworks into SimpleRisk:</h4>
                 <ol>
                     <li>Click the plus (+) icon above to manually create a new framework.</li>
-                    <li><a href="../admin/register.php">Register</a> your SimpleRisk instance to download the free Secure Controls Framework (SCF) Extra and <a href="../admin/securecontrolsframework.php">select from over 200 different frameworks</a> that have been expertly mapped against over 1000 security and privacy controls.</li>
+                    <li>Install the Secure Controls Framework (SCF) Extra under <code>extras/complianceforgescf/</code> on the host bind mount, then <a href="../admin/securecontrolsframework.php">select from over 200 different frameworks</a> that have been expertly mapped against over 1000 security and privacy controls.</li>
                     <li>Use the licensed <a href="../admin/importexport.php">Import-Export Extra</a> to instantly install any of the following frameworks or import your own:
                         <ol style="list-style-type: disc;">
     <?php

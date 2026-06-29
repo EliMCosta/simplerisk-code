@@ -2916,6 +2916,7 @@ $lang = array(
     // Note: 'Active' (line 733) and 'Purchase' (line 404) are reused as-is;
     // do not duplicate them here. One key per English string per CLAUDE.md.
     'StateReadyToDownload'                => 'Ready to Download',
+    'StateUninstalled'                    => 'Not Installed',
     'StateChecking'                       => 'Checking…',
     'StateRegistrationRequired'           => 'Registration Required',
 

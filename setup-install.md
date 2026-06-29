@@ -226,7 +226,8 @@ routes to the DB (attach the right compose `networks:` / bridge / VLAN).
   creates the DB + user + schema as root) does not apply. Set `DB_SETUP=manual`
   (or leave it unset) so the entrypoint only writes `config.php` and connects,
   then load the version-matched core schema yourself —
-  `https://github.com/simplerisk/database/raw/master/simplerisk-en-$version.sql`,
+  `https://raw.githubusercontent.com/EliMCosta/simplerisk-database/master/simplerisk-en-$version.sql`
+  (override with `DB_SCHEMA_REPO` / `DB_BRANCH` env vars),
   where `$version` is the `Dockerfile`'s `ENV version=`. The dev
   `DB_SETUP_PASS = MARIADB_ROOT_PASSWORD` constraint is gone entirely.
 - **TLS to the DB.** Over the internal network you usually want this: set

@@ -3812,27 +3812,7 @@ function upgrade_from_20190331001($db){
         }
     }
 
-    // If the SimpleRisk instance is registered
-    if (get_setting('registration_registered') != 0)
-    {
-        // Get the current registration values
-        $name = get_setting('registration_name');
-        $company = get_setting('registration_company');
-        $title = get_setting('registration_title');
-        $phone = get_setting('registration_phone');
-        $email = get_setting('registration_email');
-
-        // Split the name into two parts using the first space
-        $array = explode(' ', $name, 2);
-        $fname = (isset($array[0]) ? $array[0] : "");
-        $lname = (isset($array[1]) ? $array[1] : "");
-
-        // Add the new first and last name settings
-        add_setting("registration_fname", $fname);
-        add_setting("registration_lname", $lname);
-
-        update_registration($name="", $company="", $title="", $phone="", $email="", $fname="", $lname="");
-    }
+    // Cloud registration sync removed — extras and upgrades are self-managed.
 
     // Update the database version
     update_database_version($db, $version_to_upgrade, $version_upgrading_to);

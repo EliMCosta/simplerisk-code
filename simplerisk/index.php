@@ -159,14 +159,8 @@ else {
                 exit();
             }
 
-            // Create the SimpleRisk instance ID if it doesn't already exist
-            create_simplerisk_instance_id();
-
             // Set the user permissions
             set_user_permissions($user);
-
-            // Do a license check
-            simplerisk_license_check();
 
             // Get base url
             $_SESSION["base_url"] = get_base_url();

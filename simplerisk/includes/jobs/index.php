@@ -9,8 +9,8 @@ return [
     'core_countries_update' => true,
     'core_document_update' => true,
     'core_email_send' => true,
-    'core_server_ping' => true,
-    'core_version_check' => true,
+    'core_server_ping' => false,
+    'core_version_check' => false,
     'core_workflow_action_execute' => true,
     'core_workflow_execute' => true,
 ];

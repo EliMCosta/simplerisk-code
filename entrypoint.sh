@@ -327,7 +327,9 @@ db_setup(){
 	else
 		print_log "initial_setup:info" "Downloading schema..."
 		SCHEMA_FILE='/tmp/simplerisk.sql'
-		exec_cmd "curl -sL https://github.com/simplerisk/database/raw/master/simplerisk-en-$version.sql > $SCHEMA_FILE" "Could not download schema from Github. Exiting."
+		DB_SCHEMA_REPO="${DB_SCHEMA_REPO:-EliMCosta/simplerisk-database}"
+		DB_BRANCH="${DB_BRANCH:-master}"
+		exec_cmd "curl -sL https://raw.githubusercontent.com/${DB_SCHEMA_REPO}/${DB_BRANCH}/simplerisk-en-$version.sql > $SCHEMA_FILE" "Could not download schema from Github. Exiting."
 	fi
 
 	print_log "initial_setup:info" "Applying changes to MySQL database... (MySQL error will be printed to console as guidance)"

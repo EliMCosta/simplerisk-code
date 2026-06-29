@@ -512,7 +512,7 @@ function check_web_connectivity()
 	set_proxy_stream_context($method, $header);
 
 	// URLs to check
-	$urls = array("https://register.simplerisk.com", "https://services.simplerisk.com", "https://scf.simplerisk.com", "https://services.nvd.nist.gov", "https://github.com", "https://raw.githubusercontent.com", "https://simplerisk-downloads.s3.amazonaws.com");
+	$urls = array("https://services.nvd.nist.gov", "https://github.com", "https://raw.githubusercontent.com");
 
 	// Create an empty array
 	$array = array();
@@ -937,128 +937,32 @@ function check_extra_versions($current_app_version)
 {
 	global $escaper;
 
-        // Create an empty array
-        $array = array();
+	$array = array();
 
-        // If the instance is registered
-        if (get_setting('registration_registered') != 0)
-        {
-		// If the upgrade extra exists
-		if (file_exists(realpath(__DIR__ . '/../extras/upgrade/index.php')))
+	foreach (available_extras() as $extra)
+	{
+		$short_name = $extra['short_name'];
+
+		if (!core_is_installed($short_name))
 		{
-			// Load the upgrade extra
-			require_once(realpath(__DIR__ . '/../extras/upgrade/index.php'));
+			continue;
+		}
 
-			// Get the list of available SimpleRisk Extras
-			$extras = available_extras();
+		$array[] = array("result" => 1, "text" => "The SimpleRisk " . $escaper->escapeHtml($extra['long_name']) . " is installed.");
 
-			// Check all purchases in one web service call
-			$purchases = core_check_all_purchases();
+		if (extra_simplerisk_version_compatible($short_name))
+		{
+			$array[] = array("result" => 1, "text" => "The currently installed " . $escaper->escapeHtml($extra['long_name']) . " is compatible with this version of SimpleRisk.");
+		}
+		else
+		{
+			$array[] = array("result" => 0, "text" => "The currently installed " . $escaper->escapeHtml($extra['long_name']) . " is not compatible with this version of SimpleRisk.");
+		}
 
-			// If the service call failed, report it and skip the purchase checks
-			if ($purchases === false)
-			{
-				$array[] = array("result" => 0, "text" => "SimpleRisk was unable to connect to the services server to check Extra purchases.");
-			}
-			// For each available Extra
-			else foreach ($extras as $extra)
-			{
-				// If this is the Upgrade or ComplianceForge SCF Extra
-				if ($extra['short_name'] == "upgrade" || $extra['short_name'] == "complianceforgescf")
-				{
-					// Set purchased to true
-					$purchased = true;
-					$expired = false;
-				}
-				else
-				{
-					$extras_xml = $purchases->{"extras"};
-					$extra_xml = $extras_xml->{$extra['short_name']};
-
-					// If this extra isn't in the service response, skip it
-					if ($extra_xml === null || !isset($extra_xml->{"purchased"}))
-					{
-						continue;
-					}
-
-					$purchased = (bool)json_decode(strtolower($extra_xml->{"purchased"}->__toString()));
-					$disabled = (bool)json_decode(strtolower($extra_xml->{"disabled"}->__toString()));
-					$deleted = (bool)json_decode(strtolower($extra_xml->{"deleted"}->__toString()));
-					$expired = false;
-
-					// If the extra was purchased
-					if ($purchased)
-					{
-						// Get the expiration date
-						$expires = $extra_xml->{"expires"}->__toString();
-
-						// If the expiration date is not set
-						if ($expires == "0000-00-00 00:00:00")
-						{
-							$expired = false;
-						}
-						// If the expiration date has passed
-						else if ($expires < date('Y-m-d h:i:s'))
-						{
-							$expired = true;
-						}
-						else $expired = false;
-					}
-					else $expires = "N/A";
-				}
-
-
-				// If the extra is purchased
-				if ($purchased)
-				{
-					// If the extra is installed
-					if (core_is_installed($extra['short_name']))
-					{
-						// If the extra license has not expired
-						if (!$expired)
-						{
-							$array[] = array("result" => 1, "text" => "The SimpleRisk " . $escaper->escapeHtml($extra['long_name']) . " has been purchased and installed.");
-						}
-						// The license has expired
-						else
-						{
-							$array[] = array("result" => 0, "text" => "Your license for the SimpleRisk " . $escaper->escapeHtml($extra['long_name']) . " has expired.");
-						}
-
-						// If this extra is compatible with this version of SimpleRisk
-						if (extra_simplerisk_version_compatible($extra['short_name']))
-						{
-							$array[] = array("result" => 1, "text" => "The currently installed " . $escaper->escapeHtml($extra['long_name']) . " is compatible with this version of SimpleRisk.");
-						}
-						// This extra is not compatible
-						else
-						{
-							$array[] = array("result" => 0, "text" => "The currently installed " . $escaper->escapeHtml($extra['long_name']) . " is not compatible with this version of SimpleRisk.");
-						}
-
-						// If we have the current version of the Extra
-						if (core_extra_current_version($extra['short_name']) == latest_version($extra['short_name']))
-						{
-							$array[] = array("result" => 1, "text" => "You are running the most recent version of the " . $escaper->escapeHtml($extra['long_name']) . ".");
-						}
-						// We have an older version of the Extra
-						else if (core_extra_current_version($extra['short_name']) < latest_version($extra['short_name']))
-						{
-							$array[] = array("result" => 0, "text" => "A newer version of the " . $escaper->escapeHtml($extra['long_name']) . " is available.");
-						}
-                        // If we have a newer version of the Extra
-                        else if (core_extra_current_version($extra['short_name']) > latest_version($extra['short_name']))
-                        {
-                            $array[] = array("result" => 1, "text" => "You are running version " . core_extra_current_version($extra['short_name']) . " of the " . $escaper->escapeHtml($extra['long_name']) . ".  The current version is " . latest_version($extra['short_name']) . ".  You must be from the future.");
-                        }
-					}
-					// The extra is not installed
-					else
-					{
-						$array[] = array("result" => 0, "text" => "The SimpleRisk " . $escaper->escapeHtml($extra['long_name']) . " has been purchased but is not installed.");
-					}
-				}
-			}
+		$current = core_extra_current_version($short_name);
+		if ($current)
+		{
+			$array[] = array("result" => 1, "text" => "Installed version of the " . $escaper->escapeHtml($extra['long_name']) . ": " . $escaper->escapeHtml($current) . ".");
 		}
 	}
 

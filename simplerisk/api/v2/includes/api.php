@@ -743,33 +743,11 @@ function api_v2_admin_settings_extras_licenses()
         return;
     }
 
-    require_once(realpath(__DIR__ . '/../../../includes/services.php'));
     require_once(realpath(__DIR__ . '/../../../includes/extras.php'));
-
-    // Single services-API call; returns false on connection failure.
-    $purchases = core_check_all_purchases();
-    if ($purchases === false) {
-        api_v2_json_result(503, 'Services API unreachable.', null);
-        return;
-    }
 
     $licensed = [];
     foreach (available_extra_short_names() as $short_name) {
-        // Some Extras are bundled and always considered licensed; mirror
-        // core_is_purchased()'s early-return list so the API agrees with
-        // the rest of the codebase on those slugs.
-        if (in_array($short_name, ['upgrade', 'complianceforgescf'], true)) {
-            $licensed[] = $short_name;
-            continue;
-        }
-
-        $extra_xml = isset($purchases->{'extras'}) ? $purchases->{'extras'}->{$short_name} : null;
-        if (empty($extra_xml) || !isset($extra_xml->{'purchased'})) {
-            continue;
-        }
-
-        $purchased = (bool) json_decode(strtolower($extra_xml->{'purchased'}->__toString()));
-        if ($purchased) {
+        if (core_is_installed($short_name)) {
             $licensed[] = $short_name;
         }
     }
@@ -797,69 +775,11 @@ function api_v2_admin_extras_install()
         return;
     }
 
-    require_once(realpath(__DIR__ . '/../../../includes/services.php'));
-    require_once(realpath(__DIR__ . '/../../../includes/extras.php'));
-
-    // Accept JSON body (the JS sends application/json) AND form-encoded
-    // POST (for symmetry with the activation endpoint that uses FormData).
-    $body = json_decode(file_get_contents('php://input'), true);
-    if (!is_array($body)) {
-        $body = $_POST;
-    }
-
-    $name = isset($body['name']) ? trim((string)$body['name']) : '';
-    if ($name === '') {
-        api_v2_json_result(400, $lang['MissingExtraName'] ?? 'Missing Extra name.', null);
-        return;
-    }
-
-    $valid = available_extra_short_names();
-    if (!in_array($name, $valid, true)) {
-        api_v2_json_result(400, $lang['UnknownExtra'] ?? 'Unknown Extra name.', null);
-        return;
-    }
-
-    // download_extra() queues a toast on every code path via set_alert(),
-    // including success. The Configure Hub install flow is fully reactive
-    // (modal closes, catalog refetches) so nothing in this request consumes
-    // those toasts — left in the session, they'd surface on the user's next
-    // unrelated page load. We always capture-and-clear via get_alert(true, true)
-    // and either drop the message (success) or surface it as the response's
-    // status_message (failure), so the user sees the specific reason for the
-    // failure ("Not Purchased", "Invalid Instance or Key", etc.) instead of
-    // the generic InstallExtraError fallback.
-    try {
-        // $name was validated against available_extra_short_names() (a
-        // hard-coded list of known Extra short names) via in_array(...,
-        // strict=true) above. Phan can't see through that allowlist into
-        // download_extra(), which uses $name in shell + path operations
-        // inside services.php, so the suppression carries the reasoning.
-        // @phan-suppress-next-line SecurityCheckMulti -- $name validated against available_extra_short_names() hard-coded allowlist via in_array() before reaching download_extra(); only known Extra short names can reach here
-        $result = download_extra($name);
-    } catch (\Throwable $e) {
-        write_debug_log('Extra install failed for ' . $name . ': ' . $e->getMessage(), 'error');
-        $alert = get_alert(true, true);
-        $message = (is_string($alert) && $alert !== '')
-            ? $alert
-            : ($lang['InstallExtraError'] ?? 'Install failed.');
-        api_v2_json_result(500, $message, null);
-        return;
-    }
-
-    if (!$result) {
-        $alert = get_alert(true, true);
-        $message = (is_string($alert) && $alert !== '')
-            ? $alert
-            : ($lang['InstallExtraError'] ?? 'Install failed.');
-        api_v2_json_result(500, $message, null);
-        return;
-    }
-
-    // Success: drop the queued "good" toast so it doesn't leak to the
-    // next navigation. The JS closes the modal and reloads the catalog —
-    // visible-state change is its own success signal.
-    get_alert(true, true);
-    api_v2_json_result(200, 'OK', ['installed' => true]);
+    api_v2_json_result(
+        501,
+        'Extras are self-managed. Install under extras/<name>/ on the host bind mount, then refresh.',
+        null
+    );
 }
 
 /**********************************************

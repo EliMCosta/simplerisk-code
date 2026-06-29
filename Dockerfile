@@ -34,7 +34,8 @@ FROM php:${php_version}-apache
 LABEL maintainer="SimpleRisk"
 
 # Matches simplerisk/includes/version.php APP_VERSION, so DB_SETUP=automatic
-# downloads the version-aligned core schema (simplerisk-en-$version.sql).
+# downloads the version-aligned core schema from EliMCosta/simplerisk-database
+# (simplerisk-en-$version.sql; override via DB_SCHEMA_REPO / DB_BRANCH).
 ENV version=20260519-001
 
 WORKDIR /var/www

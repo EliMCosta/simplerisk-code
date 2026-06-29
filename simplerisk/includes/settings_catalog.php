@@ -89,13 +89,6 @@ function settings_catalog(): array
             'tags'        => ['system'],
             'visibility'  => ['mode' => 'always'],
         ],
-        'register' => [
-            'label_key'   => 'RegisterAndUpgrade',
-            'desc_key'    => 'RegisterAndUpgradeDesc',
-            'path'        => 'admin/register.php',
-            'tags'        => ['system'],
-            'visibility'  => ['mode' => 'callable', 'fn' => 'settings_visibility_register'],
-        ],
         'queue_monitor' => [
             'label_key'   => 'QueueMonitor',
             'desc_key'    => 'QueueMonitorDesc',
@@ -306,12 +299,6 @@ function settings_catalog(): array
             'tags'        => ['extras'],
             'visibility'  => ['mode' => 'always'],
             'extra_name'  => 'complianceforgescf',
-            // SCF doesn't need to be purchased — the instance just needs
-            // to be registered before the SCF Extra can be downloaded.
-            // When the SCF Extra isn't installed, the tile renders
-            // "Registration Required" and links to admin/register.php
-            // instead of going through the purchase / license flow.
-            'uninstalled_state' => 'registration_required',
         ],
         'separation_extra' => [
             'label_key'   => 'TeamBasedSeparationExtra',
@@ -463,21 +450,6 @@ function settings_visibility_fix_encoding_issues(): bool
 {
     return function_exists('has_files_with_encoding_issues')
         && has_files_with_encoding_issues();
-}
-
-/******************************************************
- * FUNCTION: SETTINGS VISIBILITY — REGISTER & UPGRADE  *
- ******************************************************/
-/**
- * The Register & Upgrade tile is hidden when the feature is disabled for
- * this install. register_and_upgrade_disabled() lives in functions.php
- * (it reads a setting and is also consulted by registration_redirect()
- * and admin/register.php).
- */
-function settings_visibility_register(): bool
-{
-    return function_exists('register_and_upgrade_disabled')
-        && !register_and_upgrade_disabled();
 }
 
 /******************************************************

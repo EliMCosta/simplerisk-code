@@ -60,7 +60,9 @@ function display()
                 </form>\n";
         }
     } else { // Otherwise, the Extra does not exist
-        echo "<a href=\"https://www.simplerisk.com/extras\" target=\"_blank\" class='text-info'>Purchase the Extra</a>\n";
+        echo "<div class='card-body my-2 border'>";
+        display_self_managed_extra_notice('advanced_search');
+        echo "</div>";
     }
 }
 

@@ -150,30 +150,21 @@
     }
 
     // Sort order for Extras-tag tiles within the Extras section. Other
-    // sections continue to use alpha-by-key ordering. Phase 4 will add
-    // ready_to_download and purchase to this set after async license
-    // enrichment resolves uninstalled tiles.
+    // sections continue to use alpha-by-key ordering. Extras are
+    // self-managed on disk, so a tile is only ever activated, deactivated,
+    // or uninstalled.
     var STATE_ORDER = {
         activated:             0,
         deactivated:           1,
-        ready_to_download:     2,
-        uninstalled:           3,
-        registration_required: 4,
-        purchase:              5,
+        uninstalled:           2,
     };
 
-    // Lang key per state for the badge text. Uninstalled tiles render
-    // 'Checking…' until license enrichment completes (Phase 4).
-    // registration_required is the SCF-specific terminal state for uninstalled
-    // tiles whose catalog entry declares uninstalled_state — license
-    // enrichment leaves it alone and the click router routes to register.php.
+    // Lang key per state for the badge text. Extras are self-managed on
+    // disk, so only activated/deactivated/uninstalled are ever produced.
     var STATE_TO_LANG_KEY = {
         activated:             'Active',
         deactivated:           'Disabled',
-        ready_to_download:     'StateReadyToDownload',
-        uninstalled:           'StateChecking',
-        registration_required: 'StateRegistrationRequired',
-        purchase:              'Purchase',
+        uninstalled:           'StateUninstalled',
     };
 
     // Sort entries by (STATE_ORDER, label). Used to order tiles inside
@@ -292,9 +283,9 @@
     }
 
     // -----------------------------------------------------------------------
-    // Click router for Extras tiles. Branches on tile state.
-    // (ready_to_download and purchase land here too; the install and
-    // purchase modal handlers are added in Phases 5 and 6 respectively.)
+    // Click router for Extras tiles. Branches on tile state: deactivated
+    // opens the activate modal, uninstalled opens the self-managed notice,
+    // all other states are no-ops.
     // -----------------------------------------------------------------------
     function handleExtrasTileClick(entry, tileNode) {
         var state = tileNode.dataset.state || entry.state || 'activated';
@@ -309,23 +300,23 @@
             case 'deactivated':
                 openActivateModal(entry);
                 return;
-            case 'ready_to_download':
-                openInstallModal(entry);
-                return;
-            case 'registration_required':
-                // SCF Extra is included automatically once the instance is
-                // registered with SimpleRisk. Send the admin straight to the
-                // Register & Upgrade page rather than the marketplace.
-                window.location.href = '../admin/register.php';
-                return;
-            case 'purchase':
-                openPurchaseModal(entry);
-                return;
             case 'uninstalled':
+                openSelfManagedExtraNotice(entry);
+                return;
             default:
-                // No-op while license enrichment is in flight (Phase 4)
                 return;
         }
+    }
+
+    function openSelfManagedExtraNotice(entry) {
+        var slug = entry.extra_name || '';
+        var body = 'Install this Extra under <code>extras/' + slug + '/</code> on the host bind mount, then refresh this page.';
+        openModal({
+            title:        entry.label || slug,
+            body:         body,
+            primaryLabel: L('Close') || 'Close',
+            onPrimary:    function (m) { m.close(); },
+        });
     }
 
     function openActivateModal(entry) {
@@ -383,70 +374,6 @@
                     m.setBusy(false);
                     m.setError(err.serverMessage || L('ActivateExtraError'));
                 });
-            },
-        });
-    }
-
-    function openInstallModal(entry) {
-        var extraName = entry.extra_name || '';
-        var body = L('InstallExtraBody').replace('{name}', entry.label);
-
-        openModal({
-            title:        L('InstallExtraTitle'),
-            body:         body,
-            primaryLabel: L('Install'),
-            onPrimary:    function (m) {
-                m.setError('');
-                m.setBusy(true);
-
-                fetch(BASE_URL + '/api/v2/admin/extras/install', {
-                    method:      'POST',
-                    credentials: 'same-origin',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'CSRF-TOKEN':   (typeof csrfMagicToken !== 'undefined') ? csrfMagicToken : '',
-                    },
-                    body: JSON.stringify({ name: extraName }),
-                }).then(function (resp) {
-                    if (resp.status === 401) {
-                        window.location.reload();
-                        return;
-                    }
-                    // Always parse the body, even on non-OK, so the modal can
-                    // surface the server's status_message (e.g. "Not Purchased",
-                    // "Invalid Instance or Key") instead of a generic fallback.
-                    return resp.json().then(function (json) {
-                        if (!resp.ok) {
-                            var serverMsg = (json && json.status_message) ? json.status_message : null;
-                            var err = new Error(serverMsg || ('HTTP ' + resp.status));
-                            err.serverMessage = serverMsg;
-                            throw err;
-                        }
-                        return json;
-                    });
-                }).then(function (json) {
-                    if (!json) { return; }
-                    m.close();
-                    loadCatalog();
-                }).catch(function (err) {
-                    console.error('hub: install failed for', extraName, err);
-                    m.setBusy(false);
-                    m.setError(err.serverMessage || L('InstallExtraError'));
-                });
-            },
-        });
-    }
-
-    function openPurchaseModal(entry) {
-        var body = L('PurchaseExtraBody').replace('{name}', entry.label);
-
-        openModal({
-            title:        L('PurchaseExtraTitle'),
-            body:         body,
-            primaryLabel: L('ViewExtras'),
-            onPrimary:    function (m) {
-                window.open('https://www.simplerisk.com/extras/', '_blank', 'noopener');
-                m.close();
             },
         });
     }
@@ -604,8 +531,8 @@
 
         // Tile navigation: click navigates; keyboard Enter/Space also navigates.
         // Extras tiles dispatch through handleExtrasTileClick so state-specific
-        // behavior (modals for deactivated/ready_to_download/purchase, no-op
-        // for uninstalled) routes correctly; non-Extras tiles navigate inline.
+        // behavior (activate modal for deactivated, self-managed notice for
+        // uninstalled) routes correctly; non-Extras tiles navigate inline.
         function handleTileActivation() {
             if (isExtrasEntry(entry)) {
                 handleExtrasTileClick(entry, a);
@@ -718,8 +645,8 @@
 
         // Whole row clickable; star button stops propagation in its own handler.
         // Extras rows dispatch through handleExtrasTileClick so state-specific
-        // behavior (modals for deactivated/ready_to_download/purchase, no-op
-        // for uninstalled) routes correctly; non-Extras rows navigate inline.
+        // behavior (activate modal for deactivated, self-managed notice for
+        // uninstalled) routes correctly; non-Extras rows navigate inline.
         function handleRowActivation() {
             if (isExtrasEntry(entry)) {
                 handleExtrasTileClick(entry, tr);
@@ -1304,107 +1231,6 @@
         });
     }
 
-    // -----------------------------------------------------------------------
-    // Async license enrichment.
-    //
-    // After the catalog has rendered with synchronously-computed state, fire
-    // a second request to /admin/settings/extras/licenses. The response
-    // tells us which uninstalled Extras the customer has licensed; those
-    // tiles upgrade to 'ready_to_download', the rest upgrade to 'purchase'.
-    // If the request fails or times out (15 s), the uninstalled tiles stay
-    // in 'Checking…' state and an inline retry notice appears at the bottom
-    // of the Extras section.
-    // -----------------------------------------------------------------------
-    function enrichExtrasLicenses() {
-        // Skip if no uninstalled tiles to enrich
-        var anyUninstalled = allEntries.some(function (e) { return e.state === 'uninstalled'; });
-        if (!anyUninstalled) { return; }
-
-        removeLicenseErrorNotice();
-
-        var controller = new AbortController();
-        var timeoutId  = setTimeout(function () { controller.abort(); }, 15000);
-
-        fetch(BASE_URL + '/api/v2/admin/settings/extras/licenses', {
-            credentials: 'same-origin',
-            signal:      controller.signal,
-        }).then(function (resp) {
-            clearTimeout(timeoutId);
-            if (resp.status === 401) {
-                window.location.reload();
-                return;
-            }
-            if (!resp.ok) { throw new Error('HTTP ' + resp.status); }
-            return resp.json();
-        }).then(function (json) {
-            if (!json) { return; }
-            var licensed = Array.isArray(json && json.data && json.data.licensed)
-                ? json.data.licensed
-                : [];
-            applyLicenseEnrichment(licensed);
-        }).catch(function (err) {
-            clearTimeout(timeoutId);
-            console.error('hub: license enrichment failed', err);
-            showLicenseErrorNotice();
-        });
-    }
-
-    function applyLicenseEnrichment(licensed) {
-        // Update allEntries: uninstalled tiles become ready_to_download (if
-        // in licensed) or purchase. Other states stay as-is.
-        allEntries = allEntries.map(function (e) {
-            if (e.state !== 'uninstalled') { return e; }
-            var newState = licensed.indexOf(e.extra_name) !== -1
-                ? 'ready_to_download'
-                : 'purchase';
-            return Object.assign({}, e, { state: newState });
-        });
-
-        // Don't render the main hub if the user is currently in a sub-hub —
-        // the state mutation above is still useful for when they exit, but
-        // rendering now would yank them out of the sub-hub they're viewing.
-        if (activeSubHub) { return; }
-
-        // Full re-render so badges, sort order, and click handlers update.
-        renderCatalog(allEntries);
-    }
-
-    function showLicenseErrorNotice() {
-        // Locate (or append to) the Extras section. After Phase 2 sort, the
-        // section is rendered with data-section-tag="extras".
-        var section = root.querySelector('.hub__section[data-section-tag="extras"]');
-        if (!section) { return; }
-
-        removeLicenseErrorNotice();
-
-        var notice = document.createElement('div');
-        notice.className = 'hub__license-error';
-        notice.setAttribute('role', 'alert');
-
-        var msg = document.createElement('span');
-        msg.textContent = L('CouldNotReachServicesApi') + ' ';
-        notice.appendChild(msg);
-
-        var retry = document.createElement('a');
-        retry.href              = '#';
-        retry.dataset.action    = 'retry-license';
-        retry.textContent       = L('Retry');
-        notice.appendChild(retry);
-
-        section.appendChild(notice);
-
-        retry.addEventListener('click', function (evt) {
-            evt.preventDefault();
-            removeLicenseErrorNotice();
-            enrichExtrasLicenses();
-        });
-    }
-
-    function removeLicenseErrorNotice() {
-        var existing = root.querySelector('.hub__license-error');
-        if (existing) { existing.parentNode.removeChild(existing); }
-    }
-
     // ---------------------------------------------------------------------------
     // Fetch catalog and render
     // ---------------------------------------------------------------------------
@@ -1449,7 +1275,6 @@
                 if (activeSubHub) {
                     root.classList.add('hub--sub-hub-mode');
                     renderSubHub(activeSubHub);
-                    enrichExtrasLicenses();
                     return;
                 }
                 // No match — drop the sentinel and fall through to the main render.
@@ -1457,7 +1282,6 @@
             }
 
             renderCatalog(allEntries);
-            enrichExtrasLicenses();
         }).catch(function (err) {
             clearTimeout(timeoutId);
             console.error('hub: catalog fetch failed', err);

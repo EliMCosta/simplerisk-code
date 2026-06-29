@@ -35,3 +35,8 @@ define('DB_DATABASE', '__DB_DATABASE__');
 // --- Sessions ---
 // Accepts the strings 'true' or 'false' (not booleans).
 define('USE_DATABASE_FOR_SESSIONS', '__USE_DATABASE_FOR_SESSIONS__');
+
+// --- Database schema provisioning (optional) ---
+// GitHub repo and branch used when downloading SQL schema files on first install.
+// define('DB_SCHEMA_REPO', 'EliMCosta/simplerisk-database');
+// define('DB_BRANCH', 'master');

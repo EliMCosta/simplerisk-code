@@ -8964,18 +8964,21 @@ function get_label_by_risk_field_name($field){
  ***********************************/
 function display_license_check()
 {
-	global $lang;
+}
+
+/*********************************************
+ * FUNCTION: DISPLAY SELF-MANAGED EXTRA NOTE *
+ *********************************************/
+function display_self_managed_extra_notice($extra_slug)
+{
 	global $escaper;
 
-	// If the license check failed
-	if (isset($_SESSION['license_check']) && $_SESSION['license_check'] == "fail")
-	{
-		echo "
-            <div class='license_check alert alert-danger mt-2 mb-0'>" . 
-                $escaper->escapeHtml($lang['LicenseCheckFailed']) . "
-            </div>
-        ";
-	}
+	$extra_slug = (string) $extra_slug;
+	echo "<p class='text-muted mb-0'>Install the <strong>"
+		. $escaper->escapeHtml($extra_slug)
+		. "</strong> Extra under <code>extras/"
+		. $escaper->escapeHtml($extra_slug)
+		. "/</code> on the host bind mount, then refresh this page.</p>\n";
 }
 
 /******************************************

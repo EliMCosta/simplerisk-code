@@ -193,8 +193,9 @@
 			echo "
 					<div class='row'>
 						<div class='col-12'>
-							<div class='card-body my-2 border'>
-								<a class='text-info' href='https://www.simplerisk.com/extras' target='_blank'>Purchase the Extra</a>
+							<div class='card-body my-2 border'>";
+            display_self_managed_extra_notice('import-export');
+            echo "
 							</div>
 						</div>
 					</div>
