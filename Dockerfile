@@ -1,12 +1,13 @@
 # SimpleRisk app image — mirrors the official simplerisk/simplerisk-minimal pattern
 # (github.com/simplerisk/docker /simplerisk-minimal): app at /var/www/simplerisk,
-# non-root `simplerisk` user, supervisord running Apache+cron+rsyslog, setcap for
+# non-root `simplerisk` user, supervisord running nginx+php-fpm+cron+rsyslog, setcap for
 # low ports, self-signed SSL on 443, logrotate. Liveness probe lives in
 # compose.app.yml (HEALTHCHECK is not supported in OCI image format).
 #
 # Differences from the upstream image (forced by our dev/customization model):
-#   * PHP 8.2 (ARG php_version=8.2) — our extras were tested on 8.2; bump to 8.4
-#     only as a deliberate, tested change. The upstream default is 8.4.
+#   * PHP 8.4 on the `php-fpm` base (ARG php_version=8.4), running Nginx + PHP-FPM under
+#     supervisord instead of upstream's `php-apache` (mod_php). Extras were originally
+#     validated on 8.2; the 8.4 bump is gated by the full test suite.
 #   * ./simplerisk is the vendored CORE checkout only. The app source is COPY'd from
 #     it (instead of downloaded from the SimpleRisk S3 bundle at build time).
 #   * Custom extras live in ../extras (outside this repo). compose.app.yml bind-mounts
@@ -27,9 +28,9 @@
 #
 # Build:  podman compose -f compose.app.yml build simplerisk
 
-ARG php_version=8.2
+ARG php_version=8.4
 
-FROM php:${php_version}-apache
+FROM php:${php_version}-fpm
 
 LABEL maintainer="SimpleRisk"
 
@@ -63,6 +64,7 @@ RUN apt-get update && \
         curl \
         default-mysql-client \
         unzip \
+        nginx \
     && apt-get -y autoremove \
     && rm -rf /var/lib/apt/lists/*
 
@@ -95,11 +97,12 @@ RUN docker-php-ext-configure gd --with-freetype --with-jpeg && \
 RUN pecl install pcov && docker-php-ext-enable pcov && \
     echo 'pcov.enabled=0' > /usr/local/etc/php/conf.d/simplerisk-pcov.ini
 
-# Bind 80/443 without root and allow cron setgid, then drop the cap helper.
-RUN setcap CAP_NET_BIND_SERVICE=+eip /usr/sbin/apache2 && \
-    chmod gu+s /usr/sbin/cron && \
-    apt-get -y remove libcap2-bin && \
-    apt-get -y autoremove
+# Bind 80/443 without root and allow cron setgid. NB: libcap2-bin is intentionally
+# NOT removed (the upstream apache image did) — the trixie `nginx` package Depends on
+# iproute2, whose dependency chain keeps libcap2-bin, so `apt remove libcap2-bin` would
+# cascade and uninstall nginx itself. The tool is tiny, so we just keep it.
+RUN setcap CAP_NET_BIND_SERVICE=+eip /usr/sbin/nginx && \
+    chmod gu+s /usr/sbin/cron
 
 # Daily logrotate via cron (upstream).
 RUN echo "0 0 * * * root /usr/sbin/logrotate /etc/logrotate.d/simplerisk.conf > /dev/null 2>&1" >> /etc/cron.d/logrotate-cron && \
@@ -111,8 +114,15 @@ RUN echo "0 0 * * * root /usr/sbin/logrotate /etc/logrotate.d/simplerisk.conf > 
 COPY simplerisk-limits.ini  /usr/local/etc/php/conf.d/
 COPY simplerisk-opcache.ini /usr/local/etc/php/conf.d/
 
-# Support files: supervisord, apache envvars/foreground/vhosts, logrotate, rsyslog.
-# `COPY common/ /` lays them into /etc/... exactly as upstream.
+# SAPI polyfill (apache_request_headers/getallheaders under FPM) + its auto_prepend_file
+# wiring + the FPM www-pool override. These target the image's /usr/local/etc scan dirs
+# (NOT /etc, where `COPY common/ /` below would otherwise land them unused).
+COPY docker/sapi_compat.php                     /docker/sapi_compat.php
+COPY common/etc/php/fpm/simplerisk-pool.conf    /usr/local/etc/php-fpm.d/zz-simplerisk.conf
+COPY common/etc/php/conf.d/simplerisk-sapi.ini  /usr/local/etc/php/conf.d/simplerisk-sapi.ini
+
+# Support files: supervisord, nginx (global+vhost+snippet), rsyslog, logrotate.
+# `COPY common/ /` lays common/etc/{nginx,supervisor,rsyslog.d,logrotate.d} into /etc/...
 COPY common/ /
 
 # The app source — our customized core checkout, not an upstream download.
@@ -127,30 +137,30 @@ COPY configure-admin.php   /docker/configure-admin.php
 COPY seed-ldap-settings.php /usr/local/bin/seed-ldap-settings.php
 COPY entrypoint.sh /entrypoint.sh
 
-# Harden Apache ssl/security config and enable the needed modules. The self-signed
-# CA + server cert is NOT generated here anymore — entrypoint.sh's generate_ssl_certs()
-# creates it at runtime into the bind-mounted /etc/apache2/ssl, so it persists across
-# rebuilds and can be replaced by dropping files into ./certs. update-ca-certificates is
-# dropped too: it needs root + the CA, and nothing here requires the container to trust
-# its own self-signed server cert (healthcheck is HTTP; DB SSL uses a separate cert).
-RUN a2enmod headers rewrite ssl && \
-    a2enconf security && \
-    sed -i 's/\(SSLProtocol\) all -SSLv3/\1 TLSv1.2/g' /etc/apache2/mods-enabled/ssl.conf && \
-    sed -i 's/#\(SSLHonorCipherOrder on\)/\1/g' /etc/apache2/mods-enabled/ssl.conf && \
-    sed -i 's/\(ServerTokens\) OS/\1 Prod/g' /etc/apache2/conf-enabled/security.conf && \
-    sed -i 's/#\(ServerSignature\) On/\1 Off/g' /etc/apache2/conf-enabled/security.conf
+# SSL/security hardening now lives in the nginx config (common/etc/nginx/nginx.conf:
+# server_tokens off; and the security headers in common/etc/nginx/conf.d/simplerisk.conf),
+# replacing the old a2enmod/a2enconf + ssl.conf/security.conf sed edits. The self-signed
+# CA + server cert is NOT generated here — entrypoint.sh's generate_ssl_certs() creates
+# it at runtime into the bind-mounted /etc/nginx/ssl, so it persists across rebuilds and
+# can be replaced by dropping files into ./certs. (update-ca-certificates stays dropped:
+# it needs root + the CA, and nothing here requires the container to trust its own
+# self-signed server cert; DB SSL uses a separate cert.)
 
-# Create the non-root run user, lay out log/run dirs, and set ownerships so the
-# `simplerisk` Apache worker can read/write the app and config.php.
+# Create the non-root run user, lay out log/run/nginx-temp dirs, and set ownerships so
+# the `simplerisk` user (which runs both nginx and the FPM workers) can read/write the
+# app, config.php, and the bind-mounted certs. /var/www/html is the base default and
+# unused (the app lives under /var/www/simplerisk).
 RUN rm -rf /var/www/html && \
     useradd -G www-data simplerisk && \
-    mkdir -p /var/log/simplerisk /var/log/supervisor /var/run/supervisor && \
-    chmod -R 700 /etc/apache2 /var/log/simplerisk /var/run/ /var/www/simplerisk && \
-    chmod 755 /entrypoint.sh /etc/apache2/foreground.sh && \
+    mkdir -p /var/log/simplerisk /var/log/supervisor /var/run/supervisor \
+             /var/lib/nginx/body /var/lib/nginx/proxy /var/lib/nginx/fastcgi \
+             /var/lib/nginx/uwsgi /var/lib/nginx/scgi && \
+    chmod -R 700 /var/log/simplerisk /var/run/ /var/www/simplerisk && \
+    chmod 755 /entrypoint.sh /docker/sapi_compat.php && \
     chmod +x /usr/local/bin/seed-ldap-settings.php && \
-    chown -R simplerisk:www-data /etc/apache2 /var/log/apache2 /var/log/simplerisk /var/log/supervisor /var/run/ /var/www/simplerisk
+    chown -R simplerisk:www-data /etc/nginx /var/lib/nginx /var/log/simplerisk /var/log/supervisor /var/run/ /var/www/simplerisk
 
-# Persist logs only. /etc/apache2/ssl is bind-mounted from ./certs (see compose.app.yml);
+# Persist logs only. /etc/nginx/ssl is bind-mounted from ./certs (see compose.app.yml);
 # /var/www/simplerisk is intentionally NOT a volume — see the header comment.
 VOLUME [ "/var/log" ]
 
@@ -163,11 +173,9 @@ EXPOSE 443
 
 CMD ["/usr/bin/supervisord", "-n", "-c", "/etc/supervisor/supervisord.conf"]
 
-# PID 1 here is supervisord, NOT apache. The php:*-apache base sets
-# `STOPSIGNAL SIGWINCH` (httpd's graceful-stop signal), which supervisord does
-# NOT handle — so `podman stop` would send SIGWINCH, supervisord ignores it,
-# the 10s grace elapses, and podman SIGKILLs the container. That forced teardown
-# also races podman-compose's `--force-recreate` network cleanup ("network is
-# being used"). SIGTERM is what supervisord actually drains apache/rsyslog/cron
-# on, so overrides the inherited SIGWINCH here.
+# PID 1 here is supervisord. SIGTERM is what it actually drains nginx/php-fpm/rsyslog/cron
+# on (it stops its managed programs on SIGTERM), so set it explicitly — the php:*-fpm base
+# defaults to SIGQUIT (php-fpm's graceful-stop), which supervisord does not forward as a
+# clean shutdown, and that forced teardown would race podman-compose's
+# `--force-recreate` network cleanup ("network is being used").
 STOPSIGNAL SIGTERM

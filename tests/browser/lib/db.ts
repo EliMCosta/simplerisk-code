@@ -12,25 +12,45 @@ function phpScalar(phpExpr: string): string {
   ).trim();
 }
 
-/** Count of risks whose subject matches exactly (subject is E2E_-prefixed). */
+/**
+ * Encryption-aware risk lookups. With the encryption extra on (this stack runs it on),
+ * risks.subject is stored as `ENC1:` ciphertext, so a plaintext `WHERE subject = ?`
+ * never matches. try_decrypt() is idempotent on plaintext and available after
+ * require'ing functions.php, but the simplerisk DB user lacks EXECUTE on it as a SQL
+ * routine — so we fetch recent rows and decrypt in PHP. E2E subjects are unique and
+ * freshly created, so scanning the most-recent rows is sufficient.
+ */
+
+/** Count of risks whose (encrypted) subject decrypts to this exact value. */
 export function countRisksBySubject(subject: string): number {
   const subjJson = JSON.stringify(subject);
-  const n = phpScalar(`$s=$db->prepare("SELECT COUNT(*) FROM risks WHERE subject = ?"); $s->execute([${subjJson}]); echo (int)$s->fetchColumn();`);
+  const n = phpScalar(
+    `$rows=$db->query("SELECT subject FROM risks ORDER BY id DESC LIMIT 1000")->fetchAll(PDO::FETCH_COLUMN);` +
+    `$c=0; foreach($rows as $enc){ if(try_decrypt($enc)===${subjJson}) $c++; } echo (int)$c;`,
+  );
   return parseInt(n, 10) || 0;
 }
 
-/** A plain risks column for the risk with this subject (e.g. 'reference_id'). */
+/** A plain risks column for the risk whose (encrypted) subject decrypts to this value. */
 export function riskColumn(subject: string, column: string): string {
   const subjJson = JSON.stringify(subject);
   // column is validated to a safe identifier (letters/underscore) before interpolation.
   if (!/^[A-Za-z_]+$/.test(column)) throw new Error(`unsafe column: ${column}`);
-  return phpScalar(`$s=$db->prepare("SELECT \`${column}\` FROM risks WHERE subject = ?"); $s->execute([${subjJson}]); echo (string)$s->fetchColumn();`);
+  return phpScalar(
+    `$rows=$db->query("SELECT id, subject FROM risks ORDER BY id DESC LIMIT 1000")->fetchAll();` +
+    `$id=0; foreach($rows as $r){ if(try_decrypt($r["subject"])===${subjJson}){ $id=(int)$r["id"]; break; } }` +
+    `echo $id ? (string)$db->query("SELECT \`${column}\` FROM risks WHERE id=".(int)$id)->fetchColumn() : "";`,
+  );
 }
 
 /** The current calculated_risk for the risk with this subject (from risk_scoring). */
 export function riskCalculatedRisk(subject: string): string {
   const subjJson = JSON.stringify(subject);
-  return phpScalar(`$s=$db->prepare("SELECT rs.calculated_risk FROM risk_scoring rs JOIN risks r ON r.id = rs.id WHERE r.subject = ?"); $s->execute([${subjJson}]); echo (string)$s->fetchColumn();`);
+  return phpScalar(
+    `$rows=$db->query("SELECT id, subject FROM risks ORDER BY id DESC LIMIT 1000")->fetchAll();` +
+    `$id=0; foreach($rows as $r){ if(try_decrypt($r["subject"])===${subjJson}){ $id=(int)$r["id"]; break; } }` +
+    `echo $id ? (string)$db->query("SELECT calculated_risk FROM risk_scoring WHERE id=".(int)$id)->fetchColumn() : "";`,
+  );
 }
 
 /** Count of framework_control_test_audits initiated for a given test id. */
