@@ -23,7 +23,21 @@ final class AuthenticationLdapConfigTest extends E2ETestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->snapshot = $this->snapshotSettings('custom_auth', 'LDAP_HOST', 'LDAP_PORT', 'LDAP_BIND_DN');
+        // Snapshot EVERY setting ldapauth_admin_save() writes on a config POST.
+        // The save handler persists the whole form from $_POST, so even a partial
+        // submit (this test only sets ldap_host) clobbers the unfilled connection
+        // settings to their insecure defaults — e.g. LDAP_BASE_DN -> '' and
+        // LDAP_TLS_MODE -> 'starttls', which then breaks every real LDAP login
+        // (ldapauth_verify() refuses on an empty BASE_DN and fails StartTLS against
+        // a plaintext directory). Restore the full set so the dev stack survives.
+        $this->snapshot = $this->snapshotSettings(
+            'custom_auth',
+            'LDAP_HOST', 'LDAP_PORT', 'LDAP_TLS_MODE', 'LDAP_ALLOW_PLAINTEXT',
+            'LDAP_BASE_DN', 'LDAP_BIND_DN', 'LDAP_USER_FILTER', 'LDAP_USER_DN_TEMPLATE',
+            'LDAP_NAME_ATTRIBUTE', 'LDAP_EMAIL_ATTRIBUTE', 'LDAP_MANAGER_ATTRIBUTE',
+            'LDAP_DEFAULT_ROLE_ID', 'AUTHENTICATION_ADD_NEW_USERS',
+            'UPDATE_USER_WITH_DATA_FROM_IDP', 'LDAP_MFA_REQUIRED'
+        );
         $this->writeSetting('custom_auth', '1');
     }
 

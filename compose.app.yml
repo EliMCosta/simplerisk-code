@@ -49,6 +49,8 @@ services:
       # Secrets also exposed via env_file (.env), repeated here for clarity.
       SIMPLERISK_ENCRYPTION_KEY: ${SIMPLERISK_ENCRYPTION_KEY}
       LDAP_BIND_PASSWORD: ${LDAP_BIND_PASSWORD}
+      # Public URL for simplerisk_base_url repair when nginx catch-all stored https://_.
+      SIMPLERISK_PUBLIC_URL: ${SIMPLERISK_PUBLIC_URL:-https://localhost:8443}
       # Optional mail settings (applied to the settings table on each boot).
       MAIL_TRANSPORT: ${MAIL_TRANSPORT:-}
       MAIL_HOST: ${MAIL_HOST:-}
@@ -77,12 +79,15 @@ services:
     # :Z applies a private SELinux label (FC43 enforcing). Create ./certs before first up.
     volumes:
       - ../extras:/var/www/simplerisk/extras:Z
-      - ./certs:/etc/apache2/ssl:Z
+      - ./certs:/etc/nginx/ssl:Z
       - ./tests:/var/www/simplerisk/tests:Z
     restart: unless-stopped
-    # HTTP liveness on internal :80 (OCI image format does not support HEALTHCHECK).
+    # Full-stack liveness on internal :443 (OCI image format does not support HEALTHCHECK).
+    # HTTPS exercises Nginx + PHP-FPM + TLS together (running index.php via FPM), not just
+    # the :80 redirect — so it catches an FPM crash the old `http://localhost` check missed.
+    # -f fails on non-2xx, -s silences progress, -k ignores the self-signed cert.
     healthcheck:
-      test: ["CMD", "curl", "--fail", "http://localhost"]
+      test: ["CMD", "curl", "-fsk", "https://localhost/"]
       interval: 1m
     # Joins the external simplerisk-app_default network (declared below). This
     # network is shared with containers/services that attach to it from outside

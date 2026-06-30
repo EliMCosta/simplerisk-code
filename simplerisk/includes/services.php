@@ -306,8 +306,11 @@ function get_system_token()
  ********************************/
 function check_system_token()
 {
-    // Get the HTTP Headers for the request
-    $headers = getallheaders();
+    // Get the HTTP Headers for the request. HTTP header names are case-insensitive
+    // (RFC 7230) but PHP-FPM/nginx reconstructs them from HTTP_* server vars with
+    // title-case, so 'X-SYSTEM-TOKEN' becomes 'X-System-Token'. Normalise to
+    // uppercase before the exact-case lookup below (mirrors csrf_startup()).
+    $headers = array_change_key_case(getallheaders(), CASE_UPPER);
 
     // If a system token was provided
     if (isset($headers['X-SYSTEM-TOKEN']))

@@ -32,7 +32,16 @@ $db->exec("DELETE FROM frameworks WHERE name LIKE 'E2E_%'");
 // Risk children first (delete_risk cascade), then the E2E risks themselves — so
 // editing/scoring/close flows do not leave orphaned rows behind.
 $db->exec("DELETE FROM comments WHERE comment LIKE '${riskLike}'");
-$ids = $db->query("SELECT id FROM risks WHERE subject LIKE '${riskLike}'")->fetchAll(PDO::FETCH_COLUMN);
+// risks.subject is stored as ENC1: ciphertext when the encryption extra is on, so a
+// plaintext LIKE can't match. Decrypt in PHP and prefix-match — same approach as the
+// lookups in lib/db.ts. Fetch all rows: the test DB is small and the sweep must catch
+// every leftover from prior runs, not just recent ones.
+$ids = [];
+foreach ($db->query("SELECT id, subject FROM risks")->fetchAll() as $r) {
+    if (str_starts_with((string) try_decrypt($r['subject']), '${E2E_PREFIX}')) {
+        $ids[] = (int) $r['id'];
+    }
+}
 foreach ($ids as $id) {
     foreach (['mitigations','mgmt_reviews','closures','comments','files'] as $t) {
         $db->prepare("DELETE FROM {$t} WHERE risk_id = ?")->execute([$id]);
@@ -41,7 +50,9 @@ foreach ($ids as $id) {
     $db->prepare('DELETE FROM residual_risk_scoring_history WHERE risk_id = ?')->execute([$id]);
     $db->prepare('DELETE FROM risk_scoring WHERE id = ?')->execute([$id]);
 }
-$db->exec("DELETE FROM risks WHERE subject LIKE '${riskLike}'");
+if ($ids) {
+    $db->exec("DELETE FROM risks WHERE id IN (" . implode(',', $ids) . ")");
+}
 // Extras seed rows (teams, business units, custom fields) + their junction/data
 // rows. Wrapped in try/catch: if an extra was never activated its tables are
 // absent, and that must not abort the risk sweep above (best-effort, like the TS).

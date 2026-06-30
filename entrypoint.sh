@@ -130,13 +130,13 @@ set_cron(){
 }
 
 # Generate the self-signed CA + server cert referenced by the SSL vhost, but only when
-# it isn't already present. /etc/apache2/ssl is bind-mounted from ./certs on the host,
+# it isn't already present. /etc/nginx/ssl is bind-mounted from ./certs on the host,
 # so the generated material persists across rebuilds and an operator can replace it by
 # dropping files into ./certs (then this is a no-op). Mirrors the openssl invocations
 # the Dockerfile used to run at build time. Runs as the non-root simplerisk user, which
 # can write the bind mount thanks to userns: keep-id in compose.app.yml.
 generate_ssl_certs(){
-	local SSL_DIR='/etc/apache2/ssl'
+	local SSL_DIR='/etc/nginx/ssl'
 	local CA_DIR="$SSL_DIR/ca"
 	local SRV_DIR="$SSL_DIR/simplerisk"
 	local CA_KEY="$CA_DIR/ca.key"
@@ -173,6 +173,22 @@ apply_mail_setting(){
 	      "$SIMPLERISK_DB_DATABASE" \
 	      -e "UPDATE settings SET value='${escaped}' WHERE name='${db_key}';" \
 	    || print_log "mail_settings:warn" "Failed to update ${db_key}"
+}
+
+repair_simplerisk_base_url(){
+	# Nginx catch-all `server_name _` caused first-boot installs to persist
+	# simplerisk_base_url as `https://_`. Repair on every boot (idempotent).
+	local public_url="${SIMPLERISK_PUBLIC_URL:-https://localhost:8443}"
+	local escaped
+	escaped=$(printf '%s' "$public_url" | sed 's/\\/\\\\/g' | sed "s/'/\\\\'/g")
+	mysql -u "$SIMPLERISK_DB_USERNAME" \
+	      -p"$SIMPLERISK_DB_PASSWORD" \
+	      -h "$SIMPLERISK_DB_HOSTNAME" \
+	      -P "$SIMPLERISK_DB_PORT" \
+	      --skip-ssl \
+	      "$SIMPLERISK_DB_DATABASE" \
+	      -e "UPDATE settings SET value='${escaped}' WHERE name='simplerisk_base_url' AND value REGEXP '^https?://_';" \
+	    || print_log "base_url:warn" "Failed to repair simplerisk_base_url"
 }
 
 set_mail_settings(){
@@ -393,6 +409,7 @@ unset_variables() {
 	unset ADMIN_PASSWORD
 	unset ADMIN_EMAIL
 	unset ADMIN_NAME
+	unset SIMPLERISK_PUBLIC_URL
 }
 
 _main() {
@@ -420,7 +437,7 @@ _main() {
 
 	set_cron
 
-	# Ensure TLS material exists before Apache starts. Idempotent: a no-op once ./certs
+	# Ensure TLS material exists before nginx starts. Idempotent: a no-op once ./certs
 	# has been populated (see generate_ssl_certs).
 	generate_ssl_certs
 
@@ -439,6 +456,9 @@ _main() {
 		# shellcheck disable=SC2015
 		[[ "${DB_SETUP:-}" = automatic* ]] && db_setup || true
 		set_mail_settings
+		if db_already_provisioned; then
+			repair_simplerisk_base_url
+		fi
 	fi
 
 	unset_variables

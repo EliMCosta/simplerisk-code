@@ -109,6 +109,11 @@ final class ApiDispatchTest extends IntegrationTestCase
         self::assertIsArray($fetched);
         // get_risk_by_id() stores the internal id (display - 1000) on the row.
         self::assertSame($created['risk_id'] - 1000, (int)$fetched['id']);
+        // subject / assessment / notes are encrypted at rest (ENC1:) when the
+        // Encryption Extra is active; get_risk must decrypt them to plaintext, or
+        // MCP callers see ciphertext where the web UI shows plaintext.
+        self::assertSame('Roundtrip Subject', $fetched['subject'] ?? null, 'get_risk must return the decrypted subject');
+        self::assertFalse(str_starts_with((string)($fetched['subject'] ?? ''), 'ENC1:'), 'get_risk must not leak ciphertext');
     }
 
     public function test_missing_required_param_is_a_protocol_error(): void

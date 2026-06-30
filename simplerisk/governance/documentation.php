@@ -406,13 +406,6 @@
         $(`#${type}-table`).initAsDocumentProgramTreegrid(type);
     });
 
-    $(function() {
-        // Trigger init for the first visible tab (shown.bs.tab is not fired on page load).
-        setTimeout(function() {
-            $('#documents-tab-content a[data-bs-toggle="tab"].active[data-type]').trigger('shown.bs.tab');
-        }, 0);
-    });
-
     $(document).ready(function() {
 
         $("body").on("click", "#document-add-btn", function() {

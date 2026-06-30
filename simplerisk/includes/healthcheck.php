@@ -9,6 +9,7 @@ require_once(language_file());
 require_once(realpath(__DIR__ . '/functions.php'));
 require_once(realpath(__DIR__ . '/bootstrap.php'));
 require_once(realpath(__DIR__ . '/extras.php'));
+require_once(realpath(__DIR__ . '/filesystem.php'));
 require_once(realpath(__DIR__ . '/../vendor/autoload.php'));
 
 /*************************************
@@ -486,8 +487,10 @@ function check_simplerisk_directory_permissions()
 
 		foreach ($objects as $name => $object)
 		{
-			// Do not check the directory above the SimpleRisk directory
-			if ($name != $simplerisk_dir . "/..")
+			// Do not check the directory above the SimpleRisk directory, or VCS metadata
+			// (e.g. a vendored checkout's .git) whose read-only objects must never be
+			// web-writable and would only produce false positives here.
+			if ($name != $simplerisk_dir . "/.." && !is_version_control_metadata($name))
 			{
 				// If the directory is writeable
 				if (!is_writeable($name))
@@ -563,8 +566,23 @@ function check_mysql_version()
     // If the database is MariaDB
     if (preg_match('/MariaDB/', $version))
     {
-        // The instance is running MariaDB and the check should fail
-        $array = array("result" => 0, "text" => "Your SimpleRisk instance is running on MariaDB, which is no longer a supported configuration.  Please migrate to MySQL as soon as possible.");
+        // Split the version by the decimals (e.g. "10.5.12-MariaDB-log")
+        $version_array = explode('.', $version);
+        $major_version = (int) $version_array[0];
+        $minor_version = (int) ($version_array[1] ?? 0);
+
+        // MariaDB 10.5+ (LTS) is supported. 10.2 is the technical floor required
+        // for the recursive CTE used by the schema upgrader; we gate on the 10.5
+        // LTS line to stay on a maintained, widely-deployed baseline.
+        if ($major_version > 10 || ($major_version == 10 && $minor_version >= 5))
+        {
+            $array = array("result" => 1, "text" => "Your SimpleRisk instance is running on MariaDB version {$version}.");
+        }
+        // If this is an older version of MariaDB and the check should fail
+        else
+        {
+            $array = array("result" => 0, "text" => "Your SimpleRisk instance is running a MariaDB version older than 10.5, which is no longer a supported configuration.  Please migrate to a newer version of MariaDB (or MySQL 8.0+) as soon as possible.");
+        }
     }
     // Otherwise this is MySQL
     else
@@ -765,6 +783,22 @@ function check_api_connectivity()
 		}
 		$return_code = $response['return_code'];
 
+		// Build a short diagnostic suffix appended to the failure messages below
+		// so an admin can see why the request failed without digging through the
+		// debug log. The HTTP return code distinguishes a transport failure (0)
+		// from an application response such as 401 or 404, and the curl error
+		// (when present) pinpoints the transport cause — e.g. a hostname that
+		// cannot be resolved internally, or a proxy that cannot reach the
+		// loopback endpoint. The whole text is HTML-escaped at render time, so
+		// the raw values are safe to interpolate here.
+		$curl_error = isset($response['curl_error']) ? $response['curl_error'] : '';
+		$detail = "  (HTTP code {$return_code}";
+		if ($curl_error !== '')
+		{
+			$detail .= "; cURL error: {$curl_error}";
+		}
+		$detail .= ")";
+
 		// If the request was successful
 		if ($return_code === 200)
 		{
@@ -783,11 +817,11 @@ function check_api_connectivity()
 			// If SSL validation is disabled
 			if (!$validate_ssl)
 			{
-				return array("result" => 0, "text" => "Unable to communicate with the SimpleRisk API even with SSL certificate checks disabled.");
+				return array("result" => 0, "text" => "Unable to communicate with the SimpleRisk API even with SSL certificate checks disabled." . $detail);
 			}
 			else
 			{
-				return array("result" => 0, "text" => "Unable to communicate with the SimpleRisk API.  To debug, try disabling SSL certificate checks for SimpleRisk API requests.");
+				return array("result" => 0, "text" => "Unable to communicate with the SimpleRisk API.  To debug, try disabling SSL certificate checks for SimpleRisk API requests." . $detail);
 			}
 		}
 	}
