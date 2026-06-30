@@ -1725,8 +1725,10 @@ function installer_check_simplerisk_directory_permissions()
 
     foreach ($objects as $name => $object)
     {
-        // Do not check the directory above the SimpleRisk directory
-        if ($name != $simplerisk_dir . "/..")
+        // Do not check the directory above the SimpleRisk directory, or VCS metadata
+        // (e.g. a vendored checkout's .git) whose read-only objects must never be
+        // web-writable and would only produce false positives here.
+        if ($name != $simplerisk_dir . "/.." && basename($name) !== ".git" && strpos($name, "/.git/") === false)
         {
             // If the directory is writeable
             if (!is_writeable($name))

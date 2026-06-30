@@ -57,6 +57,7 @@ function fetch_url_content_via_curl($http_options, $validate_ssl, $url, $paramet
     $response = false;
     $attempt = 0;
     $return_code = false;
+    $curl_error = '';
 
     while ($attempt < $max_retries && $response === false) {
         $ch = curl_init();
@@ -114,12 +115,21 @@ function fetch_url_content_via_curl($http_options, $validate_ssl, $url, $paramet
         $return_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
 
         if (curl_errno($ch)) {
-            write_debug_log("CONNECTIVITY: Attempt " . ($attempt+1) . " failed for URL: $url. Curl Error: " . curl_error($ch), "warning");
+            // Retain the transport error from the most recent attempt so callers
+            // (e.g. the health check) can surface a useful diagnostic instead of
+            // a generic failure message.
+            $curl_error = curl_error($ch);
+            write_debug_log("CONNECTIVITY: Attempt " . ($attempt+1) . " failed for URL: $url. Curl Error: " . $curl_error, "warning");
             $response = false;
             $attempt++;
             curl_close($ch);
             sleep(1); // small delay before retry
         } else {
+            // This attempt completed a transport-level round-trip (even if the
+            // server returned a non-200 status), so there is no curl error for
+            // it — clear any error captured by an earlier, failed attempt so the
+            // returned curl_error reflects only the final attempt.
+            $curl_error = '';
             curl_close($ch);
             break;
         }
@@ -137,6 +147,11 @@ function fetch_url_content_via_curl($http_options, $validate_ssl, $url, $paramet
     return [
         'return_code' => $return_code,
         'response' => $response,
+        // Transport-level error from the final attempt. Empty on a successful
+        // round-trip — including when the server returned a non-200 status, since
+        // that is an application response rather than a transport failure.
+        // Additive key: callers that only read return_code/response are unaffected.
+        'curl_error' => $curl_error,
     ];
 }
 
