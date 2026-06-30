@@ -9,6 +9,7 @@ require_once(language_file());
 require_once(realpath(__DIR__ . '/functions.php'));
 require_once(realpath(__DIR__ . '/bootstrap.php'));
 require_once(realpath(__DIR__ . '/extras.php'));
+require_once(realpath(__DIR__ . '/filesystem.php'));
 require_once(realpath(__DIR__ . '/../vendor/autoload.php'));
 
 /*************************************
@@ -489,7 +490,7 @@ function check_simplerisk_directory_permissions()
 			// Do not check the directory above the SimpleRisk directory, or VCS metadata
 			// (e.g. a vendored checkout's .git) whose read-only objects must never be
 			// web-writable and would only produce false positives here.
-			if ($name != $simplerisk_dir . "/.." && basename($name) !== ".git" && strpos($name, "/.git/") === false)
+			if ($name != $simplerisk_dir . "/.." && !is_version_control_metadata($name))
 			{
 				// If the directory is writeable
 				if (!is_writeable($name))
